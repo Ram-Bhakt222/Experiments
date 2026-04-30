@@ -384,6 +384,9 @@
       <div class="section"><h3 class="green">GOOD OPTIONS</h3>
         <div class="grid cols-4" id="goodOptionsGrid"></div>
       </div>
+      <div class="section"><h3 class="green">WHFM</h3>
+        <div class="grid cols-4" id="whfmGrid"></div>
+      </div>
 
       <!-- key goals + quick tips -->
       <div class="info-cards">
@@ -467,6 +470,7 @@
       <div class="field"><label>Subhead</label><input id="ed_subhead" /></div>
       <div class="field"><label>Best Styles (comma-separated)</label><input id="ed_best" /></div>
       <div class="field"><label>Good Options (comma-separated)</label><input id="ed_good" /></div>
+      <div class="field"><label>WHFM (comma-separated)</label><input id="ed_whfm" /></div>
       <div class="field"><label>Styles to Avoid (comma-separated)</label><input id="ed_avoid" /></div>
       <div class="field"><label>Bottom Line</label><textarea id="ed_bottom"></textarea></div>
       <div class="actions">
@@ -758,6 +762,7 @@ function renderAllStyleGrids() {
   const h = state.analysis.hair;
   renderStyleGrid("bestStylesGrid", h.best_styles, false);
   renderStyleGrid("goodOptionsGrid", h.good_options, false);
+  renderStyleGrid("whfmGrid", h.whfm, false);
   renderStyleGrid("avoidGrid", h.styles_to_avoid, true);
 }
 
@@ -856,6 +861,7 @@ async function generateImagesForAllStyles() {
   const allLabels = [
     ...(h.best_styles || []),
     ...(h.good_options || []),
+    ...(h.whfm || []),
     ...(h.styles_to_avoid || [])
   ];
   const total = allLabels.length;
@@ -1008,6 +1014,7 @@ function openEditForm() {
   document.getElementById("ed_subhead").value = h.subhead || "";
   document.getElementById("ed_best").value = (h.best_styles || []).join(", ");
   document.getElementById("ed_good").value = (h.good_options || []).join(", ");
+  document.getElementById("ed_whfm").value = (h.whfm || []).join(", ");
   document.getElementById("ed_avoid").value = (h.styles_to_avoid || []).join(", ");
   document.getElementById("ed_bottom").value = h.bottom_line || "";
   document.getElementById("editForm").classList.add("active");
@@ -1027,6 +1034,7 @@ function applyEdits() {
   const csv = id => document.getElementById(id).value.split(",").map(s => s.trim()).filter(Boolean);
   h.best_styles = csv("ed_best");
   h.good_options = csv("ed_good");
+  h.whfm = csv("ed_whfm");
   h.styles_to_avoid = csv("ed_avoid");
   h.bottom_line = document.getElementById("ed_bottom").value;
   closeEditForm();
