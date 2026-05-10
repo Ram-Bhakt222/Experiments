@@ -1,10 +1,13 @@
 @echo off
 cd /d "%~dp0"
-title HALO - Push to GitHub
+title HALO -> Ram-Bhakt222/Experiments
 color 0A
 echo.
 echo  ============================================================
-echo                  PUSH HALO TO GITHUB
+echo                  PUSH HALO -> Experiments REPO
+echo  ============================================================
+echo  Target: https://github.com/Ram-Bhakt222/Experiments
+echo  Adds:   halo-hair-analysis/
 echo  ============================================================
 echo.
 
@@ -13,97 +16,107 @@ where git >nul 2>&1
 if errorlevel 1 (
   echo  ERROR: Git is not installed.
   echo  Download: https://git-scm.com/download/win
-  echo.
   pause
   exit /b 1
 )
 
-REM Step 1: clean any leftover .git
-if exist ".git" (
-  echo  Cleaning previous .git folder...
-  rmdir /S /Q .git 2>nul
+set REPO_URL=https://github.com/Ram-Bhakt222/Experiments.git
+set CLONE_DIR=%~dp0..\Experiments
+set SUBDIR=%CLONE_DIR%\halo-hair-analysis
+
+REM 1) Clone or pull the existing repo
+if exist "%CLONE_DIR%\.git" (
+  echo  [1/5] Found local clone, pulling latest...
+  pushd "%CLONE_DIR%"
+  git pull --rebase
+  popd
+) else (
+  echo  [1/5] Cloning %REPO_URL% to a sibling folder...
+  if exist "%CLONE_DIR%" rmdir /S /Q "%CLONE_DIR%"
+  git clone "%REPO_URL%" "%CLONE_DIR%"
+  if errorlevel 1 (
+    echo  Clone failed. Check that you can access the repo and you are signed in.
+    pause
+    exit /b 1
+  )
 )
 
-REM Step 2: init + configure
-echo  [1/5] Initializing repo...
-git init -q
+REM 2) Wipe any stale halo subfolder so we replace cleanly
+if exist "%SUBDIR%" (
+  echo  Refreshing existing halo-hair-analysis subfolder...
+  rmdir /S /Q "%SUBDIR%"
+)
+mkdir "%SUBDIR%"
+
+REM 3) Copy HALO files into the subfolder (excluding secrets and runtime artifacts)
+echo  [2/5] Copying HALO into Experiments/halo-hair-analysis/ ...
+xcopy /E /I /Y /Q ".\*" "%SUBDIR%\" >nul
+
+REM Belt-and-suspenders: strip anything that should never ship even if .gitignore is bypassed
+del /Q "%SUBDIR%\.env" 2>nul
+del /Q "%SUBDIR%\.env.*" 2>nul
+del /Q "%SUBDIR%\leads.csv" 2>nul
+del /Q "%SUBDIR%\Push to GitHub.bat" 2>nul
+del /Q "%SUBDIR%\studio.py" 2>nul
+del /Q "%SUBDIR%\studio.html" 2>nul
+del /Q "%SUBDIR%\studio_install.bat" 2>nul
+del /Q "%SUBDIR%\studio_server.err" 2>nul
+del /Q "%SUBDIR%\studio_server.log" 2>nul
+del /Q "%SUBDIR%\*.log" 2>nul
+del /Q "%SUBDIR%\*.err" 2>nul
+if exist "%SUBDIR%\studio_data" rmdir /S /Q "%SUBDIR%\studio_data"
+if exist "%SUBDIR%\__pycache__" rmdir /S /Q "%SUBDIR%\__pycache__"
+if exist "%SUBDIR%\.git" rmdir /S /Q "%SUBDIR%\.git"
+if exist "%SUBDIR%\uploads" rmdir /S /Q "%SUBDIR%\uploads"
+if exist "%SUBDIR%\generated" rmdir /S /Q "%SUBDIR%\generated"
+REM Keep .env.example so testers know what keys to supply
+if not exist "%SUBDIR%\.env.example" copy /Y ".\.env.example" "%SUBDIR%\.env.example" >nul
+
+REM 4) Make sure parent .gitignore excludes secrets across all experiments
+cd /d "%CLONE_DIR%"
+findstr /M /C:".env" .gitignore >nul 2>&1
+if errorlevel 1 (
+  >> ".gitignore" echo.
+  >> ".gitignore" echo # halo-hair-analysis safety
+  >> ".gitignore" echo .env
+  >> ".gitignore" echo leads.csv
+  >> ".gitignore" echo __pycache__/
+)
+
 git config user.email "jeanelle@wombhealthfm.com"
 git config user.name "Jeanelle"
-git branch -M main 2>nul
 
-REM Step 3: stage and commit
-echo  [2/5] Staging files (secrets excluded by .gitignore)...
+echo  [3/5] Staging changes...
 git add .
-
-echo.
-echo  Staged files:
 git status --short
 echo.
 
-echo  [3/5] Verifying .env and leads.csv are NOT staged...
-git ls-files | findstr /I /R "^\.env$ ^leads.csv$" >nul
+echo  [4/5] Verifying no secrets staged...
+git ls-files | findstr /I /R "\\.env$ leads\.csv$" >nul
 if not errorlevel 1 (
-  echo  ERROR: .env or leads.csv made it into the commit!
-  echo  Aborting for safety. Check .gitignore.
-  pause
-  exit /b 1
-)
-echo  OK - no secrets staged.
-echo.
-
-echo  [4/5] Committing...
-git commit -q -m "Initial commit: HALO AI Hair and Color Analysis"
-git log --oneline -1
-echo.
-
-REM Step 4: get the remote URL
-echo  ============================================================
-echo  STEP 1 of 2: Create the repo on GitHub.com
-echo  ============================================================
-echo.
-echo  This will open GitHub in your browser. Create a NEW repo:
-echo    - Name: halo-hair-analysis  (or whatever you want)
-echo    - Privacy: Private (recommended - protects API costs)
-echo    - Do NOT initialize with README, .gitignore, or license
-echo  After clicking 'Create repository', copy the HTTPS URL
-echo  (looks like: https://github.com/yourname/halo-hair-analysis.git)
-echo.
-echo  Press any key to open GitHub...
-pause >nul
-start "" https://github.com/new
-echo.
-
-echo  ============================================================
-echo  STEP 2 of 2: Paste the repo URL below
-echo  ============================================================
-set /p REPO_URL="  Paste the HTTPS URL: "
-
-if "%REPO_URL%"=="" (
-  echo  No URL provided. Aborting.
+  echo  ERROR: .env or leads.csv made it into staging. Aborting.
   pause
   exit /b 1
 )
 
+echo  Committing...
+git commit -m "Add/update halo-hair-analysis"
 echo.
-echo  [5/5] Pushing to %REPO_URL% ...
-git remote add origin %REPO_URL%
-git push -u origin main
 
+echo  [5/5] Pushing to GitHub...
+git push
 if errorlevel 1 (
   echo.
-  echo  Push failed. Common fixes:
-  echo    1. Check the URL is correct and the repo exists.
-  echo    2. If credentials prompt failed, run: git push -u origin main
-  echo       and sign in to GitHub when prompted.
-  echo.
+  echo  Push failed. From the Experiments folder, you can retry:
+  echo    cd "%CLONE_DIR%"
+  echo    git push
   pause
   exit /b 1
 )
 
 echo.
 echo  ============================================================
-echo  DONE - HALO is on GitHub.
-echo  View at: %REPO_URL:.git=%
+echo  DONE - https://github.com/Ram-Bhakt222/Experiments/tree/main/halo-hair-analysis
 echo  ============================================================
 echo.
 pause

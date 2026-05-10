@@ -21,6 +21,37 @@ A local web app that takes a portrait photo and returns a personalized salon-sty
 3. Double-click `Run HALO.bat` (or `start-server.bat`). First run installs dependencies.
 4. Browser opens at `http://localhost:8765`.
 
+## For testers (closed beta)
+
+Welcome — you're one of a handful of people I trust to break this.
+
+**Prereqs**
+- Windows 10/11 (the `.bat` launchers are Windows-only; macOS / Linux runs fine via `python server.py`).
+- Python 3.9 or newer with "Add to PATH" checked at install time.
+- Git: https://git-scm.com/download/win
+- An OpenAI API key (https://platform.openai.com/api-keys) and a FAL key (https://fal.ai/dashboard/keys). If I told you I'd cover keys for this round, I'll send them separately — never commit them anywhere.
+
+**Setup (5 min)**
+```
+git clone <repo-url>
+cd halo-hair-analysis
+copy .env.example .env
+notepad .env       # paste your two keys, save
+Run HALO.bat       # first run installs deps, then opens the browser
+```
+
+**What to try**
+- Upload a clear front-facing portrait, good lighting, hair fully visible.
+- Try a couple of the 6 demo presets first so you can see the full report flow before spending on your own analysis.
+- Try the camera capture if you're on a laptop.
+- Edit a field in the analysis and re-render — does the image regen feel snappy?
+
+**Cost guardrails**
+A full analysis with all images + one video runs ~$0.69 on the underlying APIs. If you're using my keys, please cap yourself to ~3 full runs unless we've talked about more.
+
+**Where to report bugs / weird behavior**
+Open an issue on GitHub or text me directly. Screenshots are gold.
+
 ## Manual run
 
 ```bash
