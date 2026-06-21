@@ -1,0 +1,1857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Hair Analysis</title>
+<!-- export deps -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #faf6f1; --card: #ffffff; --ink: #2c2622; --muted: #7a6f68;
+    --green: #6b8e5a; --green-soft: #e8f0e2; --green-line: #c4d6b8;
+    --red: #c25b5b; --red-soft: #fbe8e6; --red-line: #efc7c2;
+    --border: #e8e1d8; --shadow: 0 8px 30px rgba(60, 40, 20, 0.08);
+    --accent: #6b8e5a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--ink); min-height: 100vh; padding: 20px; line-height: 1.4; }
+  .app { max-width: 1100px; margin: 0 auto; }
+
+  /* ---------- topbar ---------- */
+  .topbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;
+            gap: 12px; margin-bottom: 24px; padding: 0 4px; }
+  .brand { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+  .brand .dot { color: var(--green); }
+  .topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ---------- buttons ---------- */
+  button {
+    padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--card);
+    color: var(--ink); font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit;
+    transition: all 0.15s ease;
+  }
+  button:hover:not(:disabled) { border-color: var(--green); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--green); color: #fff; border-color: var(--green); }
+  button.primary:hover:not(:disabled) { background: #5d7e4f; }
+  button.ghost { background: transparent; }
+  button.small { padding: 6px 12px; font-size: 12px; }
+
+  /* ---------- upload screen ---------- */
+  .upload-screen { max-width: 640px; margin: 40px auto; }
+  .upload-screen header { text-align: center; margin-bottom: 24px; }
+  .upload-screen h1 { font-size: 32px; margin: 0 0 8px; letter-spacing: 0.3px; }
+  .upload-screen p.sub { color: var(--muted); margin: 0; font-size: 15px; }
+
+  .card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 24px; }
+  .dropzone { border: 2px dashed var(--border); border-radius: 12px; padding: 44px 22px;
+              text-align: center; cursor: pointer; transition: all 0.2s ease; background: #fdfbf7; display: block; }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--green); background: var(--green-soft); }
+  .dropzone .icon { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 50%; background: var(--green-soft);
+                    display: flex; align-items: center; justify-content: center; color: var(--green); }
+  .dropzone h2 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+  .dropzone p { margin: 0; color: var(--muted); font-size: 14px; }
+  .dropzone input[type="file"] { display: none; }
+
+  .upload-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
+  .preset-row { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); }
+  .preset-row h4 { font-size: 12px; font-weight: 600; letter-spacing: 1.5px; color: var(--muted); text-align: center; margin: 0 0 12px; }
+  .preset-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .preset-chip { padding: 8px 14px; background: #fdfbf7; border: 1px solid var(--border); border-radius: 100px;
+                 cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .preset-chip:hover { border-color: var(--green); background: var(--green-soft); }
+
+  /* ---------- photo tips ---------- */
+  .photo-tips { margin-top: 16px; padding: 14px 16px; background: #fdfbf7;
+                border: 1px solid var(--border); border-radius: 10px; }
+  .photo-tips-title { display: block; font-size: 11px; font-weight: 600;
+                      letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase;
+                      margin-bottom: 8px; }
+  .photo-tips ul { margin: 0; padding: 0; list-style: none;
+                   display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+  .photo-tips li { font-size: 13px; color: var(--ink); padding-left: 18px; position: relative; }
+  .photo-tips li::before { content: "✓"; position: absolute; left: 0; top: 0;
+                           color: var(--green); font-weight: 700; }
+  @media (max-width: 480px) { .photo-tips ul { grid-template-columns: 1fr; } }
+
+  .upload-privacy { font-size: 11px; color: var(--muted); text-align: center;
+                    margin: 12px 0 0; line-height: 1.5; }
+  .upload-privacy a { color: var(--green); text-decoration: underline; cursor: pointer; }
+
+  /* ---------- loading ---------- */
+  .loading-screen { display: none; text-align: center; padding: 80px 20px; }
+  .loading-screen.active { display: block; }
+  .spinner { width: 44px; height: 44px; border: 4px solid var(--border); border-top-color: var(--green);
+             border-radius: 50%; margin: 0 auto 18px; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-screen p { color: var(--muted); margin: 0; font-size: 15px; }
+  .loading-screen .sub { font-size: 12px; margin-top: 14px; }
+  .loading-steps { list-style: none; padding: 0; margin: 22px auto 0; max-width: 360px;
+                   text-align: left; font-size: 13px; color: var(--muted); }
+  .loading-steps li { padding: 6px 0; display: flex; align-items: center; gap: 10px;
+                      transition: color 0.3s ease; }
+  .loading-steps .step-dot { width: 14px; height: 14px; border-radius: 50%;
+                             border: 2px solid var(--border); background: transparent;
+                             flex-shrink: 0; transition: all 0.3s ease; }
+  .loading-steps li.active { color: var(--ink); font-weight: 500; }
+  .loading-steps li.active .step-dot { border-color: var(--green); background: var(--green-soft);
+                                       box-shadow: 0 0 0 3px var(--green-soft); }
+  .loading-steps li.done { color: var(--ink); }
+  .loading-steps li.done .step-dot { border-color: var(--green); background: var(--green); }
+  .loading-steps li.done .step-dot::after { content: "✓"; color: #fff; font-size: 9px;
+                                            display: block; line-height: 10px; text-align: center; }
+
+  .error-screen { display: none; text-align: center; padding: 60px 20px; max-width: 560px; margin: 0 auto; }
+  .error-screen.active { display: block; }
+  .err-card { background: var(--red-soft); border: 1px solid var(--red-line); padding: 24px; border-radius: 12px; text-align: left; }
+  .err-card h3 { color: var(--red); font-size: 18px; margin: 0 0 8px; }
+  .err-card .err-why { font-size: 14px; color: var(--ink); margin: 0 0 6px; line-height: 1.5; }
+  .err-card .err-fix { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.5; }
+  .err-card .err-details { margin-top: 14px; }
+  .err-card .err-details summary { cursor: pointer; font-size: 12px; color: var(--muted);
+                                   user-select: none; padding: 4px 0; }
+  .err-card pre { white-space: pre-wrap; text-align: left; font-size: 11px; margin: 8px 0 0;
+                  padding: 8px; background: rgba(0,0,0,0.04); border-radius: 6px;
+                  color: var(--muted); }
+  .err-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+  /* ---------- lead capture ---------- */
+  .lead-capture { background: var(--card); border: 1px solid var(--border);
+                  border-radius: 14px; padding: 24px; margin: 24px 0;
+                  box-shadow: var(--shadow); }
+  .lead-capture.sent { background: var(--green-soft); border-color: var(--green-line); }
+  .lead-capture h3 { margin: 0 0 6px; font-size: 18px; }
+  .lead-capture .lead-sub { font-size: 13px; color: var(--muted); margin: 0 0 16px; line-height: 1.5; }
+  .lead-capture .lead-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  @media (max-width: 600px) { .lead-capture .lead-fields { grid-template-columns: 1fr; } }
+  .lead-capture input[type="text"], .lead-capture input[type="email"] {
+    width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; font-family: inherit; background: #fdfbf7; color: var(--ink);
+  }
+  .lead-capture input:focus { outline: none; border-color: var(--green); }
+  .lead-capture .lead-optin { display: flex; align-items: flex-start; gap: 8px;
+                              font-size: 12px; color: var(--muted); line-height: 1.5;
+                              margin: 8px 0 14px; cursor: pointer; user-select: none; }
+  .lead-capture .lead-optin input { margin-top: 2px; flex-shrink: 0; }
+  .lead-capture .lead-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .lead-capture .lead-error { font-size: 12px; color: var(--red); margin: 6px 0 0; display: none; }
+  .lead-capture .lead-error.active { display: block; }
+  .lead-capture .lead-success { display: flex; align-items: center; gap: 12px; }
+  .lead-capture .lead-success .check { width: 32px; height: 32px; border-radius: 50%;
+                                       background: var(--green); color: #fff;
+                                       display: flex; align-items: center; justify-content: center;
+                                       font-weight: 700; flex-shrink: 0; }
+  .lead-capture .lead-success p { margin: 0; font-size: 14px; color: var(--ink); }
+  .lead-privacy-note { font-size: 11px; color: var(--muted); margin: 10px 0 0; line-height: 1.5; }
+
+  /* ---------- video confirm modal ---------- */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(20,15,10,0.55);
+                   z-index: 9999; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.active { display: flex; }
+  .modal-overlay .modal-card {
+    background: var(--card); border-radius: 14px; padding: 24px;
+    max-width: 420px; width: 100%; box-shadow: var(--shadow);
+  }
+  .modal-overlay .modal-card h3 { margin: 0 0 8px; font-size: 17px; }
+  .modal-overlay .modal-card p { margin: 0 0 16px; font-size: 13px; color: var(--muted);
+                                 line-height: 1.5; }
+  .modal-overlay .modal-card .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ---------- results ---------- */
+  .results-screen { display: none; }
+  .results-screen.active { display: block; }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  @media (max-width: 720px) { .hero { grid-template-columns: 1fr; } }
+  .photo-card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 12px; overflow: hidden; }
+  .photo-card img { width: 100%; border-radius: 10px; display: block; aspect-ratio: 1 / 1; object-fit: cover; }
+  .photo-placeholder { width: 100%; aspect-ratio: 1 / 1; border-radius: 10px;
+                       background: linear-gradient(135deg, #d8c8b6, #ad8d6f);
+                       display: flex; align-items: center; justify-content: center;
+                       color: #fff; font-size: 13px; letter-spacing: 1px; }
+
+  .analysis-card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow);
+                   padding: 22px; display: flex; flex-direction: column; }
+  .analysis-card h2 { text-align: center; margin: 0 0 4px; font-size: 22px; letter-spacing: 1px; }
+  .analysis-card .subhead { text-align: center; color: var(--muted); font-size: 12px;
+                            letter-spacing: 2px; margin-bottom: 18px; }
+  .attributes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .attr { background: #fdfbf7; border: 1px solid var(--border); border-radius: 10px; padding: 12px 10px; text-align: center; }
+  .attr-key { font-size: 10px; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; }
+  .attr-val { font-size: 13px; color: var(--ink); font-weight: 600; }
+
+  /* sections */
+  .section { margin-bottom: 26px; }
+  .section h3 { text-align: center; margin: 0 0 12px; font-size: 13px; font-weight: 600; letter-spacing: 2.5px; }
+  .section h3.green { color: var(--green); }
+  .section h3.red { color: var(--red); }
+
+  .grid { display: grid; gap: 10px; }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
+  @media (max-width: 720px) {
+    .grid.cols-3, .grid.cols-4, .grid.cols-5 { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .style-card {
+    background: var(--green-soft); border: 1px solid var(--green-line); border-radius: 12px;
+    padding: 8px 8px 12px; text-align: center; display: flex; flex-direction: column;
+    align-items: center; min-height: 220px;
+  }
+  .style-card.bad { background: var(--red-soft); border-color: var(--red-line); }
+  .style-card .thumb { width: 100%; aspect-ratio: 3 / 4; border-radius: 8px; overflow: hidden;
+                       margin-bottom: 8px; background: #f0e8dd; position: relative; }
+  .style-card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .style-card .thumb.shimmer {
+    background: linear-gradient(90deg, #f0e8dd 0%, #e8dfd2 50%, #f0e8dd 100%);
+    background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .style-card .thumb.shimmer::after {
+    content: "Generating..."; position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center; color: var(--muted); font-size: 11px;
+  }
+  .style-card .label {
+    font-size: 12px; line-height: 1.3; color: var(--ink); font-weight: 500;
+    margin: 4px 0 6px; min-height: 32px; display: flex; align-items: center; padding: 0 4px;
+  }
+  .style-card .badge {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+  }
+  .style-card.bad .badge { background: var(--red); }
+  .style-card .card-actions { display: flex; gap: 4px; margin-top: 6px; align-items: center; justify-content: center; }
+  .style-card .mini-btn {
+    font-size: 10px; padding: 3px 8px; border-radius: 100px;
+    background: #fff; border: 1px solid var(--border);
+    cursor: pointer; color: var(--ink); font-family: inherit;
+    transition: all 0.15s;
+  }
+  .style-card .mini-btn:hover:not(:disabled) { border-color: var(--green); background: var(--green-soft); }
+  .style-card .mini-btn:disabled { opacity: 0.5; cursor: wait; }
+  .style-card .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .image-progress {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 20px; display: none;
+  }
+  .image-progress.active { display: block; }
+  .image-progress .label {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: var(--muted); margin-bottom: 8px; letter-spacing: 0.5px;
+  }
+  .image-progress .bar {
+    height: 6px; background: var(--green-soft); border-radius: 3px; overflow: hidden;
+  }
+  .image-progress .fill {
+    height: 100%; background: var(--green); width: 0%; transition: width 0.4s ease;
+  }
+  .video-progress {
+    height: 4px; background: rgba(255,255,255,0.3); border-radius: 2px;
+    overflow: hidden; margin-top: 4px;
+  }
+  .video-progress .fill {
+    height: 100%; background: var(--green); width: 0%; transition: width 0.5s ease;
+  }
+  .style-card .thumb-status .video-progress { margin-top: 4px; }
+  #videoStatus .video-progress { margin: 8px auto 0; max-width: 220px; }
+  .style-card .thumb-status {
+    position: absolute; bottom: 4px; left: 4px; right: 4px;
+    background: rgba(0,0,0,0.55); color: #fff; font-size: 9px;
+    padding: 2px 6px; border-radius: 4px; text-align: center;
+  }
+  .style-card .thumb-failed { background: var(--red-soft); border: 1px dashed var(--red-line); }
+  .style-card .thumb-fail { display: flex; flex-direction: column; align-items: center;
+                            justify-content: center; height: 100%; padding: 12px; gap: 6px; }
+  .style-card .thumb-fail-icon { width: 26px; height: 26px; border-radius: 50%;
+                                 background: var(--red); color: #fff; display: flex;
+                                 align-items: center; justify-content: center;
+                                 font-weight: 700; font-size: 14px; }
+  .style-card .thumb-fail-msg { font-size: 10px; color: var(--red); text-align: center;
+                                line-height: 1.3; }
+
+
+  /* best part - smaller cards, no images */
+  .part-card { background: var(--green-soft); border: 1px solid var(--green-line); border-radius: 12px;
+               padding: 18px 14px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .part-card svg { color: var(--green); width: 40px; height: 40px; }
+  .part-card .label { font-size: 13px; font-weight: 500; }
+  .part-card .badge { width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: #fff;
+                      display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+
+  /* info cards */
+  .info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 26px; }
+  @media (max-width: 720px) { .info-cards { grid-template-columns: 1fr; } }
+  .info-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .info-card h4 { margin: 0 0 12px; font-size: 11px; font-weight: 600; letter-spacing: 1.8px; color: var(--muted); }
+  .info-card ul { margin: 0; padding: 0; list-style: none; }
+  .info-card li { font-size: 13px; padding: 5px 0; display: flex; gap: 8px; align-items: flex-start; }
+  .info-card li::before { content: ""; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%;
+                          background: var(--green); flex-shrink: 0; }
+
+  /* color analysis panel */
+  .color-panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px; margin-bottom: 24px;
+  }
+  .color-panel h3.section-h {
+    text-align: center; margin: 0 0 6px; font-size: 13px; font-weight: 600;
+    letter-spacing: 2.5px; color: var(--ink);
+  }
+  .season-banner {
+    background: linear-gradient(90deg, #c2a3b3, #b08fa0);
+    color: #fff; text-align: center; font-size: 14px; font-weight: 600;
+    letter-spacing: 1.5px; padding: 12px; border-radius: 10px; margin-bottom: 4px;
+  }
+  .season-blurb { text-align: center; font-size: 12px; color: var(--muted);
+                  margin-bottom: 18px; font-style: italic; }
+  .color-tier-row { margin-bottom: 16px; }
+  .color-tier-row .tier-label {
+    text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+  .color-tier-row .tier-label.best { color: var(--green); }
+  .color-tier-row .tier-label.ok { color: #b88c00; }
+  .color-tier-row .tier-label.bad { color: var(--red); }
+  .color-tier-row .swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .color-tier-row .swatch {
+    aspect-ratio: 1/1; border-radius: 8px; border: 1px solid var(--border);
+    display: flex; align-items: end; padding: 6px; color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5); font-size: 10px; font-weight: 500;
+  }
+  .palette-grid {
+    display: grid; gap: 4px; margin-top: 6px;
+  }
+  .palette-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
+  .palette-grid.cols-9 { grid-template-columns: repeat(9, 1fr); }
+  .palette-tile { aspect-ratio: 1/1; border-radius: 6px; border: 1px solid var(--border); }
+  .meta-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+    margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  .meta-row .meta-block { text-align: center; }
+  .meta-row .meta-block h4 {
+    font-size: 10px; letter-spacing: 1.5px; color: var(--muted); margin: 0 0 6px;
+  }
+  .meta-row .meta-block .swatches-row { display: flex; gap: 4px; justify-content: center; }
+  .meta-row .meta-block .meta-swatch {
+    width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
+  }
+
+  /* bottom line */
+  .bottom-line { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+                 padding: 22px 26px; margin-bottom: 24px; }
+  .bottom-line h4 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 1.8px; color: var(--green); }
+  .bottom-line p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink); }
+
+  /* edit form */
+  .edit-form { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+               padding: 22px 26px; margin-bottom: 24px; display: none; }
+  .edit-form.active { display: block; }
+  .edit-form h4 { margin: 0 0 16px; font-size: 12px; font-weight: 600; letter-spacing: 1.8px; color: var(--muted); }
+  .edit-form .field { margin-bottom: 14px; }
+  .edit-form label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1px;
+                     color: var(--muted); margin-bottom: 4px; text-transform: uppercase; }
+  .edit-form input, .edit-form textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; font-family: inherit; background: #fdfbf7; color: var(--ink);
+  }
+  .edit-form input:focus, .edit-form textarea:focus { outline: none; border-color: var(--green); }
+  .edit-form textarea { min-height: 60px; resize: vertical; }
+  .edit-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .edit-form .row { grid-template-columns: 1fr; } }
+  .edit-form .actions { display: flex; gap: 8px; margin-top: 8px; }
+
+  /* exports */
+  .export-bar { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+                padding: 16px; margin-bottom: 24px; display: flex; gap: 8px; flex-wrap: wrap;
+                justify-content: center; }
+
+  /* disclaimer */
+  .disclaimer { text-align: center; font-size: 11px; color: var(--muted);
+                font-style: italic; margin: 24px 0; }
+
+  /* IG portrait export sandbox (off-screen) */
+  .ig-export { position: fixed; left: -9999px; top: 0; width: 1080px; padding: 60px 50px;
+               background: var(--bg); }
+
+  /* ---------- mobile (under 600px / under 420px) ---------- */
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .upload-screen { margin: 16px auto; }
+    .upload-screen h1 { font-size: 24px; line-height: 1.2; }
+    .upload-screen p.sub { font-size: 14px; }
+    .card { padding: 18px; }
+    .dropzone { padding: 32px 16px; }
+    .dropzone h2 { font-size: 15px; }
+    .upload-actions { flex-direction: column; align-items: stretch; }
+    .upload-actions button { width: 100%; }
+    .export-bar { gap: 6px; padding: 12px; }
+    .export-bar button { flex: 1 1 calc(50% - 6px); padding: 9px 8px; font-size: 12px; }
+    .grid.cols-5 { grid-template-columns: repeat(2, 1fr); }
+    .grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+    .style-card .label { font-size: 11px; }
+    .analysis-card { padding: 16px; }
+    .analysis-card h2 { font-size: 18px; }
+    .bottom-line { padding: 16px 18px; }
+    .bottom-line p { font-size: 13px; }
+    .color-panel { padding: 16px; }
+    .meta-row { grid-template-columns: 1fr; gap: 16px; }
+    .lead-capture { padding: 18px; }
+    .lead-capture h3 { font-size: 16px; }
+  }
+  @media (max-width: 420px) {
+    .grid.cols-3 { grid-template-columns: 1fr 1fr; }
+    .upload-screen h1 { font-size: 21px; }
+    .topbar .brand { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">HALO<span class="dot">.</span></div>
+    <div class="topbar-actions">
+      <button id="newBtn" class="ghost small" type="button">Start a new analysis</button>
+    </div>
+  </div>
+
+  <!-- ============= UPLOAD SCREEN ============= -->
+  <div class="upload-screen" id="uploadScreen">
+    <header>
+      <h1>Your Personalized Hair &amp; Color Analysis</h1>
+      <p class="sub">In about a minute, see your best cuts, your color season, and AI previews of the look on you.</p>
+    </header>
+    <div class="card">
+      <label class="dropzone" id="dropzone" aria-label="Upload a photo of yourself">
+        <div class="icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <h2>Drop a photo here, or tap to browse</h2>
+        <p>JPG or PNG &middot; up to 10MB</p>
+        <input type="file" id="fileInput" accept="image/*" />
+      </label>
+
+      <div class="photo-tips" aria-label="Photo tips for best results">
+        <span class="photo-tips-title">For the best read:</span>
+        <ul>
+          <li>Front-facing, eyes to camera</li>
+          <li>Good even lighting &mdash; window light works</li>
+          <li>Hair down and visible &mdash; no hats</li>
+          <li>One person in frame</li>
+        </ul>
+      </div>
+
+      <div class="upload-actions">
+        <button id="cameraBtn" type="button">Take photo</button>
+        <input id="cameraInput" type="file" accept="image/*" capture="environment" style="display:none" />
+        <button id="generateBtn" class="primary" type="button" disabled>Select a photo to begin</button>
+      </div>
+      <p class="upload-privacy">Your photo is used only to generate this report. We don&rsquo;t share it with third parties.</p>
+      <div class="preset-row">
+        <h4>NOT READY YET? TRY A DEMO PRESET</h4>
+        <div class="preset-grid" id="presetGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= LOADING ============= -->
+  <div class="loading-screen" id="loadingScreen" role="status" aria-live="polite" aria-busy="true">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="loadingMsg">Reading your photo&hellip;</p>
+    <ol class="loading-steps" id="loadingSteps" aria-label="Analysis progress">
+      <li data-step="read"><span class="step-dot"></span>Reading your photo</li>
+      <li data-step="analyze"><span class="step-dot"></span>Identifying hair, face shape, and color season</li>
+      <li data-step="draft"><span class="step-dot"></span>Drafting your style recommendations</li>
+      <li data-step="previews"><span class="step-dot"></span>Generating AI previews of each look</li>
+    </ol>
+    <p class="sub">First analysis is ready in about 10&ndash;20 seconds. Style previews take another 30&ndash;60 seconds.</p>
+  </div>
+
+  <!-- ============= ERROR ============= -->
+  <div class="error-screen" id="errorScreen" role="alert">
+    <div class="err-card">
+      <h3 id="errorTitle" style="margin-top:0;">We couldn&rsquo;t finish your analysis</h3>
+      <p id="errorWhy" class="err-why">Something went wrong on our side.</p>
+      <p id="errorFix" class="err-fix">Most retries succeed &mdash; your photo is still here, just tap below.</p>
+      <details class="err-details">
+        <summary>Technical details</summary>
+        <pre id="errorMsg"></pre>
+      </details>
+    </div>
+    <div class="err-actions">
+      <button id="errorRetryBtn" class="primary" type="button">Retry analysis</button>
+      <button id="errorBackBtn" type="button">Start over with a new photo</button>
+    </div>
+  </div>
+
+  <!-- ============= RESULTS ============= -->
+  <div class="results-screen" id="resultsScreen">
+    <div id="reportArea">
+
+      <div class="image-progress" id="imageProgress">
+        <div class="label">
+          <span id="imageProgressText">Generating style images...</span>
+          <span id="imageProgressCount">0 / 0</span>
+        </div>
+        <div class="bar"><div class="fill" id="imageProgressFill"></div></div>
+      </div>
+
+      <!-- hero -->
+      <div class="hero">
+        <div class="photo-card">
+          <div id="photoSlot"></div>
+        </div>
+        <div class="analysis-card">
+          <h2>HAIR ANALYSIS</h2>
+          <div class="subhead" id="subhead"></div>
+          <div class="attributes" id="attributes"></div>
+        </div>
+      </div>
+
+      <!-- best part -->
+      <div class="section"><h3 class="green">BEST PART</h3>
+        <div class="grid cols-3" id="bestPartGrid"></div>
+      </div>
+
+      <!-- best hairstyles -->
+      <div class="section"><h3 class="green">BEST HAIRSTYLES</h3>
+        <div class="grid cols-5" id="bestStylesGrid"></div>
+      </div>
+
+      <!-- good options -->
+      <div class="section"><h3 class="green">GOOD OPTIONS</h3>
+        <div class="grid cols-4" id="goodOptionsGrid"></div>
+      </div>
+
+      <!-- key goals + quick tips -->
+      <div class="info-cards">
+        <div class="info-card">
+          <h4>KEY GOALS</h4>
+          <ul id="goalsList"></ul>
+        </div>
+        <div class="info-card">
+          <h4>QUICK TIPS</h4>
+          <ul id="tipsList"></ul>
+        </div>
+      </div>
+
+      <!-- styles to avoid -->
+      <div class="section"><h3 class="red">STYLES TO AVOID</h3>
+        <div class="grid cols-5" id="avoidGrid"></div>
+      </div>
+
+      <!-- bottom line -->
+      <div class="bottom-line">
+        <h4>BOTTOM LINE</h4>
+        <p id="bottomLineText"></p>
+      </div>
+
+      <!-- COLOR ANALYSIS -->
+      <div class="color-panel" id="colorPanel">
+        <div class="season-banner" id="seasonBanner">SOFT SUMMER</div>
+        <div class="season-blurb" id="seasonBlurb"></div>
+
+        <div class="color-tier-row">
+          <div class="tier-label best">BEST</div>
+          <div class="swatches" id="bestTier"></div>
+        </div>
+        <div class="color-tier-row">
+          <div class="tier-label ok">OK</div>
+          <div class="swatches" id="okTier"></div>
+        </div>
+        <div class="color-tier-row">
+          <div class="tier-label bad">NOT IDEAL</div>
+          <div class="swatches" id="badTier"></div>
+        </div>
+
+        <h3 class="section-h" style="margin-top:24px;">BEST NEUTRALS</h3>
+        <div class="palette-grid cols-6" id="neutralsGrid"></div>
+
+        <h3 class="section-h" style="margin-top:18px;">BEST COLORS</h3>
+        <div class="palette-grid cols-9" id="bestColorsGrid"></div>
+
+        <div class="meta-row">
+          <div class="meta-block">
+            <h4>METALS</h4>
+            <div class="swatches-row" id="metalsRow"></div>
+          </div>
+          <div class="meta-block">
+            <h4>HAIR</h4>
+            <div class="swatches-row" id="hairRow"></div>
+          </div>
+          <div class="meta-block">
+            <h4>EYES</h4>
+            <div class="swatches-row" id="eyesRow"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LEAD CAPTURE: save your report -->
+      <section class="lead-capture" id="leadCapture" aria-labelledby="leadCaptureTitle">
+        <div class="lead-form" id="leadForm">
+          <h3 id="leadCaptureTitle">Email me a copy of this report</h3>
+          <p class="lead-sub">We&rsquo;ll send your full analysis &mdash; cuts, color palette, and AI previews &mdash; to your inbox so you have it for your stylist visit. No spam.</p>
+          <div class="lead-fields">
+            <input id="leadName" type="text" placeholder="First name (optional)" autocomplete="given-name" />
+            <input id="leadEmail" type="email" placeholder="you@example.com" autocomplete="email" required />
+          </div>
+          <label class="lead-optin">
+            <input id="leadOptin" type="checkbox" />
+            <span>Also send me occasional emails with hair and color tips. You can unsubscribe at any time.</span>
+          </label>
+          <div class="lead-actions">
+            <button id="leadSubmitBtn" class="primary" type="button">Email me my report</button>
+            <button id="leadSkipBtn" class="ghost" type="button">No thanks</button>
+          </div>
+          <p class="lead-error" id="leadError" role="alert"></p>
+          <p class="lead-privacy-note">Your email is used to deliver this report and (only if you opt in above) future tips. We never sell or share it.</p>
+        </div>
+        <div class="lead-success" id="leadSuccess" style="display:none;" role="status" aria-live="polite">
+          <div class="check" aria-hidden="true">✓</div>
+          <p><strong>Sent.</strong> Check your inbox in the next minute or two. If it&rsquo;s not there, check spam.</p>
+        </div>
+      </section>
+
+      <div class="disclaimer">
+        AI-generated style guidance &mdash; a starting point, not a salon diagnosis. Use it to have a better conversation with your stylist.
+      </div>
+    </div>
+
+    <!-- edit form (collapsible) -->
+    <div class="edit-form" id="editForm">
+      <h4>EDIT ANALYSIS</h4>
+      <div class="row">
+        <div class="field"><label>Hair Type</label><input id="ed_type" /></div>
+        <div class="field"><label>Face Shape</label><input id="ed_face" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Density</label><input id="ed_density" /></div>
+        <div class="field"><label>Color Tone</label><input id="ed_color" /></div>
+      </div>
+      <div class="field"><label>Subhead</label><input id="ed_subhead" /></div>
+      <div class="field"><label>Best Styles (comma-separated)</label><input id="ed_best" /></div>
+      <div class="field"><label>Good Options (comma-separated)</label><input id="ed_good" /></div>
+      <div class="field"><label>Styles to Avoid (comma-separated)</label><input id="ed_avoid" /></div>
+      <div class="field"><label>Bottom Line</label><textarea id="ed_bottom"></textarea></div>
+      <div class="actions">
+        <button id="saveEditBtn" class="primary" type="button">Apply my edits</button>
+        <button id="cancelEditBtn" type="button">Discard changes</button>
+      </div>
+    </div>
+
+    <!-- exports -->
+    <div class="export-bar" aria-label="Save and share">
+      <button id="editBtn" type="button">Edit my analysis</button>
+      <button id="regenImagesBtn" type="button">Regenerate all previews</button>
+      <button id="exportPngBtn" type="button">Save as PNG</button>
+      <button id="exportPdfBtn" type="button">Save as PDF</button>
+      <button id="exportIgBtn" type="button">Instagram portrait</button>
+      <button id="copyTextBtn" type="button">Copy as text</button>
+    </div>
+  </div>
+
+  <!-- IG export sandbox (off-screen) -->
+  <div class="ig-export" id="igExport"></div>
+
+  <!-- ============= VIDEO CONFIRM MODAL ============= -->
+  <div class="modal-overlay" id="videoConfirmModal" role="dialog" aria-modal="true" aria-labelledby="videoConfirmTitle">
+    <div class="modal-card">
+      <h3 id="videoConfirmTitle">Generate a 5-second video of this look?</h3>
+      <p>This takes about 45 seconds. You&rsquo;ll see the new hair in motion &mdash; head turning, hair swing &mdash; on the same photo.</p>
+      <div class="modal-actions">
+        <button id="videoConfirmCancelBtn" type="button">Not now</button>
+        <button id="videoConfirmGoBtn" class="primary" type="button">Generate video</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   AI Hair Analysis - frontend
+   - state: { photo, analysis, imageJobs, editing }
+   - render functions are component-equivalent
+   - image generation: POST /generate-image (FAL FLUX schnell)
+   ========================================================================= */
+
+// -------- presets (demo data) --------
+const PRESETS = {
+  "curly-saltpepper": {
+    label: "Curly / salt-and-pepper",
+    photo: null,
+    analysis: {
+      style_identity: "EFFORTLESS SILVER SPIRAL",
+      vibe: "Editorial",
+      hair: {
+        type: "Natural Curly (2C-3A)",
+        density: "Medium Density",
+        color: "Salt & Pepper Natural",
+        face_shape: "Oval",
+        subhead: "CURLY / SALT-AND-PEPPER",
+        best_parts: ["Slight Side Part", "Soft Off-Center", "Tousled Center"],
+        best_lengths: ["Collarbone Length", "Shoulder-Grazing", "Mid-Back Layers"],
+        best_styles: [
+          "Rezo Cut with Face Frame",
+          "Long Layered Corkscrews",
+          "Curly Shag with Wispy Fringe",
+          "Glossy Silver Spiral Layers",
+          "Curtain Bangs on Natural Curl"
+        ],
+        good_options: [
+          "Diffused Curly Lob",
+          "Deva Cut (Low-Maintenance)",
+          "Stacked Curly Bob",
+          "Volume-Rich Layered Halo"
+        ],
+        styles_to_avoid: [
+          "Blunt Bob (Pyramids on Curls)",
+          "One-Length Cut (Triangle Shape)",
+          "Heavy Straight Bangs",
+          "Over-Teased Crown Volume",
+          "Tight Slicked-Back Pony"
+        ],
+        key_goals: [
+          "Lean into natural spiral pattern",
+          "Frame the face, not the neck",
+          "Create visible shape without bulk",
+          "Honor the silver dimension"
+        ],
+        quick_tips: [
+          "Trim every 8-10 weeks (curls only)",
+          "Squish-to-condish technique",
+          "Diffuse upside-down or plop dry",
+          "Microfiber towel, never terry",
+          "Refresh with water + leave-in, not gel"
+        ],
+        bottom_line: "Your silver spiral is a signature, not a problem to solve. The Rezo or curly shag with face-framing pieces will shape the curl without flattening it - and the wispy fringe option makes the salt-and-pepper read as editorial, not aging."
+      },
+      color: {
+        season: "Soft Summer", undertone: "Cool",
+        best_colors: [
+          {"name":"Soft Rose","hex":"#d4a4a4"},{"name":"Dusty Blue","hex":"#8fa3b8"},
+          {"name":"Sage","hex":"#a3b59e"},{"name":"Mauve","hex":"#a48798"},
+          {"name":"Slate","hex":"#6e7d8c"},{"name":"Plum","hex":"#7a5e72"},
+          {"name":"Cool Teal","hex":"#5e8a8a"},{"name":"Lavender","hex":"#b3a4c4"}
+        ],
+        best_neutrals: [
+          {"name":"Soft Taupe","hex":"#a89a87"},{"name":"Cool Beige","hex":"#bfae9a"},
+          {"name":"Warm Grey","hex":"#9a8c80"},{"name":"Pewter","hex":"#7a7672"},
+          {"name":"Charcoal","hex":"#4a4a4a"},{"name":"Ivory","hex":"#ede4d3"}
+        ]
+      }
+    }
+  },
+  "straight-wavy": {
+    label: "Straight / slightly wavy",
+    analysis: {
+      hair: { type: "Straight to Slightly Wavy", density: "Medium Density", color: "Medium Brown",
+              face_shape: "Oval", subhead: "STRAIGHT / SLIGHTLY WAVY",
+              best_parts: ["Slight Side Part", "Off-Center Part", "Center Part (OK if soft)"],
+              best_lengths: ["Collarbone Length", "Long Layers", "Below Shoulder Layers"],
+              best_styles: ["Long Layers (Subtle)", "Soft Face-Framing", "Off-Center Part (Polished)", "Straight with Slight Bend", "Side Part"],
+              good_options: ["Lob with Subtle Layers", "Long Layers (Low-Maint)", "Airy Curtain Bangs", "Side Part with Framing"],
+              styles_to_avoid: ["One-Length (No Layers)", "Blunt Bob (Too Heavy)", "Thick Straight Bangs", "Voluminous at Crown", "Too Much Volume + Waves"],
+              key_goals: ["Create soft vertical lines", "Frame face and cheekbones", "Add movement without bulk", "Keep it light and effortless"],
+              quick_tips: ["Trim every 8-10 weeks", "Lightweight products", "Heat protectant always", "Blow-dry smooth, not big", "Air-dry when possible"],
+              bottom_line: "Lean into long subtle layers and soft framing pieces. Avoid heavy blunt cuts and excess volume — your hair shines when it's polished and light." },
+      color: { season: "Soft Autumn", undertone: "Warm", best_colors: [], best_neutrals: [] }
+    }
+  },
+  "fine": {
+    label: "Fine hair",
+    analysis: {
+      hair: { type: "Fine Straight", density: "Fine", color: "Light Brown", face_shape: "Heart",
+              subhead: "FINE / LIGHT", best_parts: ["Off-Center Part", "Side Part", "Center Part"],
+              best_lengths: ["Chin-Length Bob", "Shoulder Length", "Lob"],
+              best_styles: ["Blunt Cut for Density", "Layered Bob", "Side-Swept Bangs", "Soft Waves", "Textured Lob"],
+              good_options: ["Tousled Bob", "Long Pixie", "Wispy Bangs", "Layered Lob"],
+              styles_to_avoid: ["Heavy Long Layers", "One-Length Below Shoulder", "Razor-Cut Ends", "Overly Long Hair", "Heavy Side Bangs"],
+              key_goals: ["Build visible body", "Frame the jawline", "Add texture and lift", "Keep hair from looking limp"],
+              quick_tips: ["Volumizing mousse at roots", "Blow-dry upside down", "Light hold spray", "Trim every 6-8 weeks", "Avoid heavy oils"],
+              bottom_line: "Shorter, blunter, with strategic layering builds the body fine hair lacks. Skip heavy product and long lengths that drag the hair down." },
+      color: { season: "Light Spring", undertone: "Warm", best_colors: [], best_neutrals: [] }
+    }
+  },
+  "thick": {
+    label: "Thick hair",
+    analysis: {
+      hair: { type: "Thick Wavy", density: "Thick", color: "Dark Brown", face_shape: "Round",
+              subhead: "THICK / WAVY", best_parts: ["Side Part", "Deep Side Part", "Off-Center Part"],
+              best_lengths: ["Long Layers", "Mid-Length", "Below Shoulder"],
+              best_styles: ["Long Layers", "Face-Framing Layers", "Long Curtain Bangs", "Side Swept Layers", "Voluminous Lob"],
+              good_options: ["Long Bob with Layers", "V-Cut Layers", "Soft Curtain Bangs", "Side Part with Volume"],
+              styles_to_avoid: ["Blunt Cut (Pyramid)", "Short One-Length", "Heavy Crown Volume", "Tight Curls All Over", "Stick-Straight Bob"],
+              key_goals: ["Remove weight from ends", "Elongate the face", "Add movement and dimension", "Avoid pyramid shape"],
+              quick_tips: ["Layered cuts every 10 weeks", "Smoothing serum on ends", "Heat protectant always", "Sleep on silk", "Blow-dry section by section"],
+              bottom_line: "Strategic layers are non-negotiable for thick hair — they remove bulk and let the shape work. Long, layered, with face framing is your sweet spot." },
+      color: { season: "Deep Autumn", undertone: "Warm", best_colors: [], best_neutrals: [] }
+    }
+  },
+  "executive": {
+    label: "Professional executive look",
+    analysis: {
+      hair: { type: "Polished Straight", density: "Medium Density", color: "Rich Brunette", face_shape: "Oval",
+              subhead: "EXECUTIVE / POLISHED", best_parts: ["Side Part", "Off-Center Part", "Slight Side Part"],
+              best_lengths: ["Sharp Lob", "Collarbone Length", "Mid-Length"],
+              best_styles: ["Sleek Lob", "Side Part with Polish", "Subtle Long Layers", "Sharp Bob", "Soft Blowout"],
+              good_options: ["Classic Bob", "Shoulder Layers", "Side-Swept Front", "Tucked Behind Ear"],
+              styles_to_avoid: ["Beachy Waves", "Heavy Bangs", "Tight Curls", "Asymmetric Edge", "Pixie Cut"],
+              key_goals: ["Project authority", "Stay low-maintenance", "Frame the face cleanly", "Travel-friendly"],
+              quick_tips: ["Trim every 6 weeks", "Smoothing cream on damp hair", "Quick blowout routine", "Heat protectant always", "Silk pillowcase"],
+              bottom_line: "Sharp, simple, polished. A precise lob with a clean side part reads competent in every room without effort." },
+      color: { season: "True Winter", undertone: "Cool", best_colors: [], best_neutrals: [] }
+    }
+  },
+  "low-maint": {
+    label: "Low-maintenance natural",
+    analysis: {
+      hair: { type: "Wavy Natural", density: "Medium Density", color: "Sun-Kissed Brown", face_shape: "Oval",
+              subhead: "EFFORTLESS / NATURAL", best_parts: ["Center Part", "Off-Center Part", "Tousled Side Part"],
+              best_lengths: ["Mid-Length", "Long Layers", "Shoulder Length"],
+              best_styles: ["Long Beachy Layers", "Soft Curtain Bangs", "Air-Dry Waves", "Loose Layers", "Center Part Natural"],
+              good_options: ["Curly Shag", "Wavy Lob", "Tousled Layers", "Subtle Highlights"],
+              styles_to_avoid: ["Sharp Blunt Cuts", "Anything Requiring Heat Daily", "Tight Pony Cuts", "Heavy Crown Lift", "Precision Geometry"],
+              key_goals: ["Air-dry friendly shape", "Zero heat styling", "Forgive bedhead", "Grow out gracefully"],
+              quick_tips: ["Trim every 10-12 weeks", "Light salt spray", "Sleep wet, plop in towel", "Skip heat tools", "Once-a-week mask"],
+              bottom_line: "Wash, scrunch, walk out the door. Natural texture plus mid-length layers means the hair takes care of itself." },
+      color: { season: "Soft Summer", undertone: "Neutral", best_colors: [], best_neutrals: [] }
+    }
+  }
+};
+
+// -------- icons (best-part svg silhouettes) --------
+const PART_ICONS = {
+  "side": '<svg viewBox="0 0 60 70" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="30" cy="35" rx="20" ry="28"/><path d="M30 7 Q 24 25, 14 35 M14 35 Q 30 28, 50 35"/></svg>',
+  "off-center": '<svg viewBox="0 0 60 70" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="30" cy="35" rx="20" ry="28"/><path d="M27 7 Q 23 25, 12 35 M27 7 Q 32 22, 50 36"/></svg>',
+  "center": '<svg viewBox="0 0 60 70" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="30" cy="35" rx="20" ry="28"/><path d="M30 7 V 22 M30 7 Q 22 25, 12 35 M30 7 Q 38 25, 48 35"/></svg>'
+};
+function pickPartIcon(label) {
+  const l = label.toLowerCase();
+  if (l.includes("center") && !l.includes("off")) return PART_ICONS["center"];
+  if (l.includes("off")) return PART_ICONS["off-center"];
+  return PART_ICONS["side"];
+}
+
+// -------- state --------
+const state = {
+  file: null,
+  photoUrl: null,
+  referenceUrl: null,
+  analysis: null,
+  analysisId: null,
+  imageJobs: {},
+  videoJobs: {},
+  editing: false
+};
+
+// -------- screens --------
+const screens = {
+  upload: document.getElementById("uploadScreen"),
+  loading: document.getElementById("loadingScreen"),
+  error: document.getElementById("errorScreen"),
+  results: document.getElementById("resultsScreen")
+};
+function show(name) {
+  Object.entries(screens).forEach(([k, el]) => {
+    if (k === name) {
+      if (k === "upload") el.style.display = "block";
+      else el.classList.add("active");
+    } else {
+      if (k === "upload") el.style.display = "none";
+      else el.classList.remove("active");
+    }
+  });
+}
+
+// -------- COMPONENT: AnalysisCard (hero) --------
+function renderHero() {
+  const photoSlot = document.getElementById("photoSlot");
+  if (state.photoUrl) {
+    photoSlot.innerHTML = `<img id="resultPhoto" alt="Your photo" src="${state.photoUrl}" />`;
+  } else {
+    photoSlot.innerHTML = `<div class="photo-placeholder">DEMO PHOTO</div>`;
+  }
+  const h = state.analysis.hair;
+  document.getElementById("subhead").textContent = h.subhead || "";
+  document.getElementById("attributes").innerHTML = [
+    { k: "TYPE", v: h.type },
+    { k: "FACE SHAPE", v: h.face_shape },
+    { k: "DENSITY", v: h.density },
+    { k: "COLOR", v: h.color }
+  ].map(a => `<div class="attr"><div class="attr-key">${a.k}</div><div class="attr-val">${a.v || "—"}</div></div>`).join("");
+}
+
+// -------- COMPONENT: BestPartGrid --------
+function renderBestPart() {
+  const items = state.analysis.hair.best_parts || [];
+  document.getElementById("bestPartGrid").innerHTML = items.map(label => `
+    <div class="part-card">
+      ${pickPartIcon(label)}
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="badge">✓</div>
+    </div>
+  `).join("");
+}
+
+// -------- COMPONENT: RecommendationGrid / AvoidGrid --------
+function renderStyleGrid(containerId, items, isBad) {
+  const root = document.getElementById(containerId);
+  root.innerHTML = (items || []).map((label, i) => {
+    const imgJob = state.imageJobs[label];
+    const vidJob = state.videoJobs[label];
+    let thumbInner = "";
+    let thumbCls = "thumb";
+    if (vidJob && vidJob.status === "done" && vidJob.url) {
+      thumbInner = `<video autoplay muted loop playsinline src="${vidJob.url}" aria-label="Animated preview: ${escapeHtml(label)}"></video>`;
+    } else if (imgJob && imgJob.status === "done" && imgJob.url) {
+      thumbInner = `<img src="${imgJob.url}" alt="AI preview: ${escapeHtml(label)}"/>`;
+      if (vidJob && (vidJob.status === "loading" || vidJob.status === "polling")) {
+        const pct = vidJob.progress || 0;
+        const bar = `<div class="video-progress"><div class="fill" style="width:${Math.min(pct, 92)}%"></div></div>`;
+        thumbInner += `<div class="thumb-status">${vidJob.statusMsg || "Generating video…"}${bar}</div>`;
+      } else if (vidJob && vidJob.status === "error") {
+        thumbInner += `<div class="thumb-status" style="background:rgba(194,91,91,0.85);">${escapeHtml(vidJob.statusMsg || "Video failed")}</div>`;
+      }
+    } else if (imgJob && imgJob.status === "error") {
+      thumbInner = `<div class="thumb-fail">
+        <div class="thumb-fail-icon" aria-hidden="true">!</div>
+        <div class="thumb-fail-msg">Preview didn't render. Tap retry below.</div>
+      </div>`;
+      thumbCls = "thumb thumb-failed";
+    } else {
+      thumbCls = "thumb shimmer";
+    }
+    const cardId = `card-${containerId}-${i}`;
+    const canAnimate = imgJob && imgJob.status === "done" && imgJob.url;
+    const animBtnDisabled = !canAnimate || (vidJob && (vidJob.status === "loading" || vidJob.status === "polling"));
+    const animBtnLabel = vidJob && vidJob.status === "done" ? "Replay video" : "See it move";
+    const failed = imgJob && imgJob.status === "error";
+    const retryBtn = failed
+      ? `<button class="mini-btn retry-card-btn" data-label="${escapeHtml(label)}">Retry preview</button>`
+      : "";
+    return `<div class="style-card ${isBad ? 'bad' : ''}" id="${cardId}">
+      <div class="${thumbCls}">${thumbInner}</div>
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="badge" aria-hidden="true">${isBad ? '✕' : '✓'}</div>
+      <div class="card-actions">
+        ${retryBtn}
+        ${failed ? "" : `<button class="mini-btn animate-card-btn" data-label="${escapeHtml(label)}" ${animBtnDisabled ? 'disabled' : ''}>${animBtnLabel}</button>`}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderAllStyleGrids() {
+  const h = state.analysis.hair;
+  renderStyleGrid("bestStylesGrid", h.best_styles, false);
+  renderStyleGrid("goodOptionsGrid", h.good_options, false);
+  renderStyleGrid("avoidGrid", h.styles_to_avoid, true);
+}
+
+// -------- COMPONENT: KeyGoals + QuickTips + BottomLine --------
+function renderInfo() {
+  const h = state.analysis.hair;
+  document.getElementById("goalsList").innerHTML = (h.key_goals || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
+  document.getElementById("tipsList").innerHTML = (h.quick_tips || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
+  document.getElementById("bottomLineText").textContent = h.bottom_line || "";
+}
+
+// -------- master render --------
+function renderColorPanel() {
+  const c = (state.analysis && state.analysis.color) || {};
+  document.getElementById("seasonBanner").textContent = (c.season || "—").toUpperCase();
+  document.getElementById("seasonBlurb").textContent = c.season_blurb || "";
+
+  function tile(item, big) {
+    const hex = (item && item.hex) || "#cccccc";
+    const name = (item && item.name) || "";
+    const cls = big ? "swatch" : "palette-tile";
+    return `<div class="${cls}" style="background:${hex}" title="${escapeHtml(name)}">${big ? escapeHtml(name) : ""}</div>`;
+  }
+
+  function fill(containerId, items, big) {
+    document.getElementById(containerId).innerHTML = (items || []).map(it => tile(it, big)).join("");
+  }
+
+  fill("bestTier", (c.best_colors || []).slice(0, 3), true);
+  fill("okTier", c.ok_colors, true);
+  fill("badTier", c.not_ideal_colors, true);
+  fill("neutralsGrid", c.best_neutrals, false);
+  fill("bestColorsGrid", c.best_colors, false);
+
+  const metals = c.metals || [];
+  document.getElementById("metalsRow").innerHTML = metals.map(m =>
+    `<div class="meta-swatch" style="background:${m.hex || '#ccc'}" title="${escapeHtml(m.name||'')}"></div>`
+  ).join("") || '<span style="font-size:10px;color:var(--muted);">—</span>';
+
+  const hairHex = c.hair_hex || "#888";
+  document.getElementById("hairRow").innerHTML =
+    `<div class="meta-swatch" style="background:${hairHex}; width:80px; height:36px;"></div>`;
+
+  const eyeHex = c.eye_hex || "#888";
+  document.getElementById("eyesRow").innerHTML =
+    `<div class="meta-swatch" style="background:${eyeHex}"></div>`;
+}
+
+function renderResults() {
+  renderHero();
+  renderBestPart();
+  renderAllStyleGrids();
+  renderInfo();
+  renderColorPanel();
+}
+
+// -------- IMAGE GENERATION (FAL FLUX schnell) --------
+// Concurrency-limited queue. Replace this with Hedra/DALL-E by swapping the
+// /generate-image backend implementation - the protocol is the same.
+async function uploadReferencePhoto() {
+  // Only needed if we have a real file (not for presets)
+  if (!state.file || state.referenceUrl) return state.referenceUrl;
+  const fd = new FormData();
+  fd.append("image", state.file);
+  const res = await fetch("/upload-photo", { method: "POST", body: fd });
+  const data = await res.json();
+  if (!res.ok || !data.url) {
+    throw new Error(data.error || "upload failed");
+  }
+  state.referenceUrl = data.url;
+  return data.url;
+}
+
+async function pollImageJob(label, requestId) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 5 * 60 * 1000) {
+    await new Promise(r => setTimeout(r, 4000));
+    const st = await fetch("/image-status/" + requestId).then(r => r.json()).catch(() => ({status: "UNKNOWN"}));
+    state.imageJobs[label] = { status: "loading", request_id: requestId, statusMsg: (st.status || "...").toLowerCase() };
+    renderAllStyleGrids();
+    if (st.status === "COMPLETED") {
+      const res = await fetch("/image-result/" + requestId).then(r => r.json());
+      const url = res && res.images && res.images[0] && res.images[0].url;
+      if (url) return { status: "done", url };
+      return { status: "error", error: "no image url in result" };
+    }
+    if (st.status === "FAILED") {
+      return { status: "error", error: "FAL job failed" };
+    }
+  }
+  return { status: "error", error: "timed out after 5 min" };
+}
+
+async function generateImagesForAllStyles() {
+  const h = state.analysis.hair;
+  const labelMeta = [];
+  (h.best_styles || []).forEach(l => labelMeta.push({label: l, category: "best"}));
+  (h.good_options || []).forEach(l => labelMeta.push({label: l, category: "good"}));
+  (h.styles_to_avoid || []).forEach(l => labelMeta.push({label: l, category: "avoid"}));
+  const allLabels = labelMeta.map(m => m.label);
+  const labelToCat = Object.fromEntries(labelMeta.map(m => [m.label, m.category]));
+  const total = allLabels.length;
+  let done = 0, failed = 0;
+
+  // need a FAL-hosted reference URL; skip for presets without a file
+  let refUrl;
+  try {
+    refUrl = await uploadReferencePhoto();
+  } catch (e) {
+    document.getElementById("errorMsg").textContent = "Photo upload failed: " + (e.message || e);
+    show("error");
+    return;
+  }
+  if (!refUrl) {
+    // demo preset case - skip image gen
+    return;
+  }
+
+  allLabels.forEach(l => { state.imageJobs[l] = { status: "loading", statusMsg: "submitting" }; });
+  renderAllStyleGrids();
+
+  const progressEl = document.getElementById("imageProgress");
+  const fillEl = document.getElementById("imageProgressFill");
+  const countEl = document.getElementById("imageProgressCount");
+  const textEl = document.getElementById("imageProgressText");
+  progressEl.classList.add("active");
+  textEl.textContent = "Generating style previews... (~15-30s each)";
+  countEl.textContent = `0 / ${total}`;
+  fillEl.style.width = "0%";
+
+  // concurrency 3 (PuLID rate limits)
+  const queue = allLabels.slice();
+  async function worker() {
+    while (queue.length) {
+      const label = queue.shift();
+      try {
+        const description = (state.analysis && state.analysis.style_descriptions && state.analysis.style_descriptions[label]) || "";
+        const submit = await fetch("/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label, hair: h, reference_url: refUrl, description,
+            analysis_id: state.analysisId,
+            category: labelToCat[label] || "best"
+          })
+        });
+        const sd = await submit.json();
+        if (!submit.ok || !sd.request_id) {
+          state.imageJobs[label] = { status: "error", error: sd.error || "submit failed" };
+          failed++;
+        } else {
+          const result = await pollImageJob(label, sd.request_id);
+          state.imageJobs[label] = result;
+          if (result.status !== "done") failed++;
+        }
+      } catch (e) {
+        state.imageJobs[label] = { status: "error", error: String(e.message || e) };
+        failed++;
+      }
+      done++;
+      const imgPct = total ? Math.round((done / total) * 100) : 0;
+      countEl.textContent = `${imgPct}%` + (failed ? `  (${failed} failed)` : "");
+      fillEl.style.width = ((done / total) * 100) + "%";
+      renderAllStyleGrids();
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  textEl.textContent = failed
+    ? `Done: ${total - failed} loaded, ${failed} failed.`
+    : "All previews ready.";
+  setTimeout(() => progressEl.classList.remove("active"), failed ? 8000 : 3000);
+}
+
+// -------- PRESET LOAD --------
+function loadPreset(key) {
+  const p = PRESETS[key];
+  if (!p) return;
+  state.analysis = JSON.parse(JSON.stringify(p.analysis));
+  state.photoUrl = p.photo || null;
+  state.imageJobs = {};
+  show("results");
+  renderResults();
+  // kick off image generation if FAL is configured (server will 503 if not)
+  generateImagesForAllStyles();
+}
+
+// -------- ANALYZE (GPT-4o vision) --------
+// Error states follow the What-Why-Fix structure from NNG H9 + UX writing guidance:
+// - errorTitle: WHAT happened (plain, no codes)
+// - errorWhy:   WHY in user terms
+// - errorFix:   HOW to recover, with a primary retry button that preserves the file
+function showStructuredError({ title, why, fix, technical }) {
+  document.getElementById("errorTitle").textContent = title || "We couldn't finish your analysis";
+  document.getElementById("errorWhy").textContent = why || "Something went wrong on our side.";
+  document.getElementById("errorFix").textContent = fix || "Most retries succeed — your photo is still here, just tap below.";
+  document.getElementById("errorMsg").textContent = technical || "";
+  show("error");
+}
+function classifyAnalyzeError(status, errorText) {
+  const t = String(errorText || "").toLowerCase();
+  if (status === 503 || t.includes("openai_api_key")) {
+    return {
+      title: "AI service not configured",
+      why: "The hair analysis service isn't reachable right now.",
+      fix: "This is on our end, not yours. Please try again in a minute."
+    };
+  }
+  if (status === 413 || t.includes("too large") || t.includes(">")) {
+    return {
+      title: "Photo is too large",
+      why: "We can analyze photos up to 10MB.",
+      fix: "Try a smaller version, or take a fresh photo with the camera button."
+    };
+  }
+  if (status === 400 || t.includes("no image") || t.includes("empty")) {
+    return {
+      title: "We couldn't read that photo",
+      why: "The file looked empty or wasn't a valid image.",
+      fix: "Try a different photo — JPG or PNG works best."
+    };
+  }
+  if (t.includes("timeout") || t.includes("timed out")) {
+    return {
+      title: "The analysis took too long",
+      why: "Our AI is moving slowly right now and didn't respond in time.",
+      fix: "Tap retry — most second attempts succeed."
+    };
+  }
+  return {
+    title: "We couldn't finish your analysis",
+    why: "Something went wrong while reading your photo.",
+    fix: "Your photo is still here. Tap retry to give it another go."
+  };
+}
+
+async function analyzeFile(file) {
+  if (!file || !file.type.startsWith("image/")) {
+    showStructuredError({
+      title: "That doesn't look like a photo",
+      why: "We can only analyze image files (JPG, PNG, WebP).",
+      fix: "Try a different file, or take a photo with the camera button."
+    });
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    showStructuredError({
+      title: "Photo is too large",
+      why: `Your file is ${(file.size / (1024*1024)).toFixed(1)}MB and the limit is 10MB.`,
+      fix: "Try a smaller version, or take a fresh photo with the camera button."
+    });
+    return;
+  }
+
+  // Keep the file around for retries
+  state.file = file;
+
+  // show photo immediately
+  const reader = new FileReader();
+  reader.onload = e => { state.photoUrl = e.target.result; };
+  reader.readAsDataURL(file);
+
+  show("loading");
+  cycleLoadingMessages();
+
+  const fd = new FormData();
+  fd.append("image", file);
+
+  try {
+    const res = await fetch("/analyze", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
+    stopLoadingMessages();
+    if (!res.ok || data.error) {
+      const errText = data.error || ("HTTP " + res.status);
+      const e = classifyAnalyzeError(res.status, errText);
+      showStructuredError({ ...e, technical: errText });
+      return;
+    }
+    state.analysis = data;
+    state.analysisId = data._analysis_id || null;
+    state.imageJobs = {};
+    state.videoJobs = {};
+    show("results");
+    renderResults();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    generateImagesForAllStyles();
+  } catch (err) {
+    stopLoadingMessages();
+    const msg = String((err && err.message) || err);
+    showStructuredError({
+      title: "We couldn't reach the analysis server",
+      why: "Looks like a network problem — your internet, or our server.",
+      fix: "Check your connection and tap retry.",
+      technical: msg
+    });
+  }
+}
+
+function retryAnalyze() {
+  if (state.file) {
+    analyzeFile(state.file);
+  } else {
+    show("upload");
+  }
+}
+
+// -------- loading message cycle + step indicator --------
+// Each step maps to a checkpoint in the analysis pipeline. We advance through
+// them on a timer to give the user a sense of progress, then mark "previews"
+// as active once the analysis returns and image generation kicks off.
+const LOADING_STEPS = [
+  { key: "read",     msg: "Reading your photo…",                    minMs: 0 },
+  { key: "analyze",  msg: "Identifying hair, face shape, and color season…", minMs: 3500 },
+  { key: "draft",    msg: "Drafting your style recommendations…",   minMs: 9000 },
+  { key: "previews", msg: "Generating AI previews of each look…",   minMs: 99999 }
+];
+let _loadingTimer = null;
+let _loadingStartedAt = 0;
+function _updateLoadingStep(elapsed) {
+  let activeKey = LOADING_STEPS[0].key;
+  for (const s of LOADING_STEPS) {
+    if (elapsed >= s.minMs) activeKey = s.key;
+  }
+  const msg = (LOADING_STEPS.find(s => s.key === activeKey) || LOADING_STEPS[0]).msg;
+  const msgEl = document.getElementById("loadingMsg");
+  if (msgEl) msgEl.textContent = msg;
+  document.querySelectorAll("#loadingSteps li").forEach(li => {
+    const k = li.getAttribute("data-step");
+    li.classList.remove("active", "done");
+    const idx = LOADING_STEPS.findIndex(s => s.key === k);
+    const activeIdx = LOADING_STEPS.findIndex(s => s.key === activeKey);
+    if (idx < activeIdx) li.classList.add("done");
+    else if (idx === activeIdx) li.classList.add("active");
+  });
+}
+function cycleLoadingMessages() {
+  _loadingStartedAt = Date.now();
+  _updateLoadingStep(0);
+  _loadingTimer = setInterval(() => {
+    _updateLoadingStep(Date.now() - _loadingStartedAt);
+  }, 600);
+}
+function stopLoadingMessages() {
+  if (_loadingTimer) { clearInterval(_loadingTimer); _loadingTimer = null; }
+}
+// Advance the loading screen to the "previews" step once analysis returns
+// and image generation has started.
+function advanceLoadingToPreviewsStep() {
+  document.querySelectorAll("#loadingSteps li").forEach(li => {
+    const k = li.getAttribute("data-step");
+    li.classList.remove("active", "done");
+    if (k === "previews") li.classList.add("active");
+    else li.classList.add("done");
+  });
+  const msgEl = document.getElementById("loadingMsg");
+  if (msgEl) msgEl.textContent = "Generating AI previews of each look…";
+}
+
+// -------- COMPONENT: EditableAnalysisForm --------
+function openEditForm() {
+  const h = state.analysis.hair;
+  document.getElementById("ed_type").value = h.type || "";
+  document.getElementById("ed_face").value = h.face_shape || "";
+  document.getElementById("ed_density").value = h.density || "";
+  document.getElementById("ed_color").value = h.color || "";
+  document.getElementById("ed_subhead").value = h.subhead || "";
+  document.getElementById("ed_best").value = (h.best_styles || []).join(", ");
+  document.getElementById("ed_good").value = (h.good_options || []).join(", ");
+  document.getElementById("ed_avoid").value = (h.styles_to_avoid || []).join(", ");
+  document.getElementById("ed_bottom").value = h.bottom_line || "";
+  document.getElementById("editForm").classList.add("active");
+  state.editing = true;
+}
+function closeEditForm() {
+  document.getElementById("editForm").classList.remove("active");
+  state.editing = false;
+}
+function applyEdits() {
+  const h = state.analysis.hair;
+  h.type = document.getElementById("ed_type").value;
+  h.face_shape = document.getElementById("ed_face").value;
+  h.density = document.getElementById("ed_density").value;
+  h.color = document.getElementById("ed_color").value;
+  h.subhead = document.getElementById("ed_subhead").value;
+  const csv = id => document.getElementById(id).value.split(",").map(s => s.trim()).filter(Boolean);
+  h.best_styles = csv("ed_best");
+  h.good_options = csv("ed_good");
+  h.styles_to_avoid = csv("ed_avoid");
+  h.bottom_line = document.getElementById("ed_bottom").value;
+  closeEditForm();
+  state.imageJobs = {}; // styles changed, drop old jobs
+  renderResults();
+  generateImagesForAllStyles();
+}
+
+// -------- COMPONENT: ExportControls --------
+async function exportPNG() {
+  const node = document.getElementById("reportArea");
+  const canvas = await html2canvas(node, { backgroundColor: "#faf6f1", scale: 2, useCORS: true });
+  triggerDownload(canvas.toDataURL("image/png"), "hair-analysis.png");
+}
+async function exportPDF() {
+  const node = document.getElementById("reportArea");
+  const canvas = await html2canvas(node, { backgroundColor: "#faf6f1", scale: 2, useCORS: true });
+  const imgData = canvas.toDataURL("image/png");
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: "px", format: [canvas.width, canvas.height] });
+  pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+  pdf.save("hair-analysis.pdf");
+}
+async function exportInstagram() {
+  const sandbox = document.getElementById("igExport");
+  sandbox.innerHTML = document.getElementById("reportArea").innerHTML;
+  sandbox.style.width = "1080px";
+  await new Promise(r => setTimeout(r, 100));
+  const canvas = await html2canvas(sandbox, { backgroundColor: "#faf6f1", scale: 1, useCORS: true });
+  const out = document.createElement("canvas");
+  out.width = 1080; out.height = 1350;
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "#faf6f1"; ctx.fillRect(0, 0, 1080, 1350);
+  const ratio = Math.min(1080 / canvas.width, 1350 / canvas.height);
+  const w = canvas.width * ratio, h = canvas.height * ratio;
+  ctx.drawImage(canvas, (1080 - w) / 2, (1350 - h) / 2, w, h);
+  triggerDownload(out.toDataURL("image/png"), "hair-analysis-ig.png");
+  sandbox.innerHTML = "";
+}
+function copySummaryText() {
+  const h = state.analysis.hair;
+  const lines = [
+    `HAIR ANALYSIS - ${h.subhead || ""}`,
+    ``,
+    `Type: ${h.type}    Face Shape: ${h.face_shape}    Density: ${h.density}    Color: ${h.color}`,
+    ``,
+    `Best Part: ${(h.best_parts || []).join(", ")}`,
+    `Best Lengths: ${(h.best_lengths || []).join(", ")}`,
+    `Best Styles: ${(h.best_styles || []).join(", ")}`,
+    `Good Options: ${(h.good_options || []).join(", ")}`,
+    `Styles to Avoid: ${(h.styles_to_avoid || []).join(", ")}`,
+    ``,
+    `Key Goals:`, ...(h.key_goals || []).map(g => "  - " + g),
+    ``,
+    `Quick Tips:`, ...(h.quick_tips || []).map(t => "  - " + t),
+    ``,
+    `Bottom Line: ${h.bottom_line}`
+  ].join("\n");
+  navigator.clipboard.writeText(lines).then(() => alert("Summary copied to clipboard."));
+}
+function triggerDownload(dataUrl, filename) {
+  const a = document.createElement("a");
+  a.href = dataUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// -------- helpers --------
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
+// ============= EVENT WIRING =============
+document.addEventListener("DOMContentLoaded", () => {
+  // preset chips
+  const grid = document.getElementById("presetGrid");
+  grid.innerHTML = Object.entries(PRESETS).map(([k, p]) =>
+    `<div class="preset-chip" data-key="${k}">${p.label}</div>`).join("");
+  grid.addEventListener("click", e => {
+    const key = e.target.getAttribute("data-key");
+    if (key) loadPreset(key);
+  });
+
+  // dropzone + file input
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const generateBtn = document.getElementById("generateBtn");
+
+  fileInput.addEventListener("change", e => {
+    if (e.target.files[0]) {
+      state.file = e.target.files[0];
+      generateBtn.disabled = false;
+      generateBtn.textContent = "Analyze my photo";
+      analyzeFile(state.file);
+    }
+  });
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault(); dropzone.classList.remove("dragover");
+    if (e.dataTransfer.files[0]) {
+      state.file = e.dataTransfer.files[0];
+      generateBtn.disabled = false;
+      generateBtn.textContent = "Analyze my photo";
+      analyzeFile(state.file);
+    }
+  });
+  generateBtn.addEventListener("click", () => {
+    if (state.file) analyzeFile(state.file);
+  });
+
+  // exports + edit
+  document.getElementById("editBtn").addEventListener("click", openEditForm);
+  document.getElementById("saveEditBtn").addEventListener("click", applyEdits);
+  document.getElementById("cancelEditBtn").addEventListener("click", closeEditForm);
+  document.getElementById("regenImagesBtn").addEventListener("click", () => {
+    state.imageJobs = {}; state.videoJobs = {};
+    renderAllStyleGrids();
+    generateImagesForAllStyles();
+  });
+  document.getElementById("exportPngBtn").addEventListener("click", exportPNG);
+  document.getElementById("exportPdfBtn").addEventListener("click", exportPDF);
+  document.getElementById("exportIgBtn").addEventListener("click", exportInstagram);
+  document.getElementById("copyTextBtn").addEventListener("click", copySummaryText);
+
+  // top-bar actions
+  document.getElementById("newBtn").addEventListener("click", () => {
+    state.file = null; state.photoUrl = null; state.referenceUrl = null;
+    state.analysis = null; state.imageJobs = {}; state.videoJobs = {};
+    document.getElementById("fileInput").value = "";
+    generateBtn.disabled = true;
+    generateBtn.textContent = "Select a photo to begin";
+    const lc = document.getElementById("leadCapture");
+    if (lc) {
+      lc.style.display = "";
+      lc.classList.remove("sent");
+      const lf = document.getElementById("leadForm");
+      const ls = document.getElementById("leadSuccess");
+      if (lf) lf.style.display = "";
+      if (ls) ls.style.display = "none";
+      const le = document.getElementById("leadEmail");
+      const ln = document.getElementById("leadName");
+      const lo = document.getElementById("leadOptin");
+      if (le) le.value = "";
+      if (ln) ln.value = "";
+      if (lo) lo.checked = false;
+    }
+    show("upload");
+  });
+  document.getElementById("errorBackBtn").addEventListener("click", () => {
+    state.file = null; state.photoUrl = null; state.referenceUrl = null;
+    state.analysis = null; state.imageJobs = {}; state.videoJobs = {};
+    document.getElementById("fileInput").value = "";
+    const gb = document.getElementById("generateBtn");
+    gb.disabled = true; gb.textContent = "Select a photo to begin";
+    show("upload");
+  });
+  document.getElementById("errorRetryBtn").addEventListener("click", retryAnalyze);
+
+  // ---------- LEAD CAPTURE ----------
+  function _validEmail(e) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  }
+  document.getElementById("leadSubmitBtn").addEventListener("click", async () => {
+    const email = (document.getElementById("leadEmail").value || "").trim().toLowerCase();
+    const name  = (document.getElementById("leadName").value || "").trim();
+    const optIn = document.getElementById("leadOptin").checked;
+    const errEl = document.getElementById("leadError");
+    errEl.classList.remove("active");
+    if (!email) {
+      errEl.textContent = "Enter your email so we know where to send the report.";
+      errEl.classList.add("active");
+      return;
+    }
+    if (!_validEmail(email)) {
+      errEl.textContent = "That email doesn’t look right — double-check the spelling.";
+      errEl.classList.add("active");
+      return;
+    }
+    const btn = document.getElementById("leadSubmitBtn");
+    const origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Sending…";
+    try {
+      const summary = state.analysis ? {
+        style_identity: state.analysis.style_identity,
+        vibe: state.analysis.vibe,
+        hair: { type: (state.analysis.hair || {}).type },
+        color: { season: (state.analysis.color || {}).season }
+      } : {};
+      const res = await fetch("/save-lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, name, opt_in: optIn, summary })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        errEl.textContent = "We couldn’t save your email just now. Try again in a moment.";
+        errEl.classList.add("active");
+        btn.disabled = false;
+        btn.textContent = origLabel;
+        return;
+      }
+      document.getElementById("leadForm").style.display = "none";
+      document.getElementById("leadSuccess").style.display = "flex";
+      document.getElementById("leadCapture").classList.add("sent");
+    } catch (e) {
+      errEl.textContent = "Network problem — check your connection and try again.";
+      errEl.classList.add("active");
+      btn.disabled = false;
+      btn.textContent = origLabel;
+    }
+  });
+  document.getElementById("leadSkipBtn").addEventListener("click", () => {
+    document.getElementById("leadCapture").style.display = "none";
+  });
+
+  // ---------- VIDEO GEN CONFIRM (Tier 2 advisory) ----------
+  let _videoApproved = false;
+  window._requestVideoConfirm = function(label) {
+    return new Promise((resolve) => {
+      if (_videoApproved) { resolve(true); return; }
+      document.getElementById("videoConfirmModal").classList.add("active");
+      document.getElementById("videoConfirmGoBtn").onclick = () => {
+        _videoApproved = true;
+        document.getElementById("videoConfirmModal").classList.remove("active");
+        resolve(true);
+      };
+      document.getElementById("videoConfirmCancelBtn").onclick = () => {
+        document.getElementById("videoConfirmModal").classList.remove("active");
+        resolve(false);
+      };
+    });
+  };
+
+  // ---------- PER-CARD RETRY (failed preview) ----------
+  document.body.addEventListener("click", async (e) => {
+    const retryBtn = e.target.closest(".retry-card-btn");
+    if (!retryBtn) return;
+    const label = retryBtn.getAttribute("data-label");
+    if (!label) return;
+    const h = (state.analysis && state.analysis.hair) || {};
+    const cat = (h.best_styles || []).includes(label) ? "best"
+             : (h.good_options || []).includes(label) ? "good"
+             : (h.styles_to_avoid || []).includes(label) ? "avoid" : "best";
+    const description = (state.analysis && state.analysis.style_descriptions && state.analysis.style_descriptions[label]) || "";
+    state.imageJobs[label] = { status: "loading", statusMsg: "Retrying…" };
+    renderAllStyleGrids();
+    try {
+      const submit = await fetch("/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label, hair: h, reference_url: state.referenceUrl, description,
+          analysis_id: state.analysisId, category: cat
+        })
+      });
+      const sd = await submit.json();
+      if (!submit.ok || !sd.request_id) {
+        state.imageJobs[label] = { status: "error", error: sd.error || "submit failed" };
+        renderAllStyleGrids();
+        return;
+      }
+      state.imageJobs[label] = await pollImageJob(label, sd.request_id);
+      renderAllStyleGrids();
+    } catch (err) {
+      state.imageJobs[label] = { status: "error", error: String(err.message || err) };
+      renderAllStyleGrids();
+    }
+  });
+
+  // ---------- ANIMATE A STYLE CARD (image -> video) ----------
+  document.body.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".animate-card-btn");
+    if (!btn) return;
+    const label = btn.getAttribute("data-label");
+    if (!label) return;
+    const imgJob = state.imageJobs[label];
+    if (!imgJob || imgJob.status !== "done" || !imgJob.url) return;
+    const ok = await window._requestVideoConfirm(label);
+    if (!ok) return;
+    state.videoJobs[label] = { status: "loading", statusMsg: "Submitting…" };
+    renderAllStyleGrids();
+    try {
+      const aH = (state.analysis && state.analysis.hair) || {};
+      const cat = (aH.best_styles || []).includes(label) ? "best"
+               : (aH.good_options || []).includes(label) ? "good"
+               : (aH.styles_to_avoid || []).includes(label) ? "avoid" : "best";
+      const res = await fetch("/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_url: imgJob.url,
+          analysis_id: state.analysisId,
+          label,
+          category: cat
+        })
+      });
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.includes("application/json")) {
+        state.videoJobs[label] = { status: "error", statusMsg: "Couldn’t start. Try again." };
+        renderAllStyleGrids();
+        return;
+      }
+      const sd = await res.json();
+      if (!res.ok || !sd.request_id) {
+        state.videoJobs[label] = { status: "error", statusMsg: "Error: " + (sd.error || "no request_id") };
+        renderAllStyleGrids();
+        return;
+      }
+      const requestId = sd.request_id;
+      const startedAt = Date.now();
+      const ESTIMATED_SECONDS = 45;
+      state.videoJobs[label] = { status: "polling", statusMsg: "Queued…", progress: 0 };
+      renderAllStyleGrids();
+      while (Date.now() - startedAt < 5 * 60 * 1000) {
+        await new Promise(r => setTimeout(r, 4000));
+        const st = await fetch("/video-status/" + requestId).then(r => r.json()).catch(() => ({ status: "UNKNOWN" }));
+        const stRaw = String(st.status || "UNKNOWN").toUpperCase();
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        const pct = Math.min((elapsed / ESTIMATED_SECONDS) * 100, 92);
+        const pctRound = Math.round(pct);
+        const friendly = stRaw === "IN_QUEUE" ? "Queued…"
+                       : stRaw === "IN_PROGRESS" ? "Generating " + pctRound + "%"
+                       : stRaw === "COMPLETED" ? "Almost ready…"
+                       : stRaw;
+        state.videoJobs[label] = { status: "polling", statusMsg: friendly, progress: pct };
+        renderAllStyleGrids();
+        if (stRaw === "COMPLETED") {
+          const result = await fetch("/video-result/" + requestId).then(r => r.json());
+          const videoUrl = (result && result.video && result.video.url) || (result && result.url);
+          if (videoUrl) {
+            state.videoJobs[label] = { status: "done", url: videoUrl };
+          } else {
+            state.videoJobs[label] = { status: "error", statusMsg: "Video URL missing." };
+          }
+          renderAllStyleGrids();
+          return;
+        }
+        if (stRaw === "FAILED") {
+          state.videoJobs[label] = { status: "error", statusMsg: "Video generation failed." };
+          renderAllStyleGrids();
+          return;
+        }
+      }
+      state.videoJobs[label] = { status: "error", statusMsg: "Timed out after 5 min." };
+      renderAllStyleGrids();
+    } catch (err) {
+      state.videoJobs[label] = { status: "error", statusMsg: "Error: " + (err.message || err) };
+      renderAllStyleGrids();
+    }
+  });
+
+  // ---------- CAMERA CAPTURE ----------
+  let _cameraStream = null;
+  let _cameraFacing = "user";
+
+  async function openCameraModal() {
+    const modal = document.getElementById("cameraModal");
+    const video = document.getElementById("cameraVideo");
+    const status = document.getElementById("cameraStatus");
+    const snap = document.getElementById("cameraSnapshot");
+    const captureBtn = document.getElementById("cameraCaptureBtn");
+    const retakeBtn = document.getElementById("cameraRetakeBtn");
+    const useBtn = document.getElementById("cameraUseBtn");
+
+    modal.style.display = "flex";
+    video.style.display = "block"; snap.style.display = "none";
+    captureBtn.style.display = "inline-block";
+    retakeBtn.style.display = "none"; useBtn.style.display = "none";
+    status.textContent = "Asking for camera permission…";
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      closeCameraModal();
+      _openNativeCamera();
+      return;
+    }
+
+    try {
+      _cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: _cameraFacing, width: { ideal: 1280 }, height: { ideal: 1280 } },
+        audio: false
+      });
+      video.srcObject = _cameraStream;
+      status.textContent = "Center your face in the frame, then tap Take photo.";
+    } catch (e) {
+      try {
+        _cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = _cameraStream;
+        status.textContent = "Center your face in the frame, then tap Take photo.";
+        return;
+      } catch (e2) {
+        status.textContent = "Opening your phone camera…";
+        closeCameraModal();
+        _openNativeCamera();
+      }
+    }
+  }
+
+  function _openNativeCamera() {
+    const inp = document.getElementById("cameraInput");
+    if (inp) inp.click();
+  }
+
+  function _isMobile() {
+    return ("ontouchstart" in window) &&
+           (window.matchMedia && window.matchMedia("(max-width: 900px)").matches);
+  }
+
+  function closeCameraModal() {
+    if (_cameraStream) {
+      _cameraStream.getTracks().forEach(t => t.stop());
+      _cameraStream = null;
+    }
+    document.getElementById("cameraModal").style.display = "none";
+  }
+
+  function captureFromCamera() {
+    const video = document.getElementById("cameraVideo");
+    const canvas = document.getElementById("cameraCanvas");
+    const snap = document.getElementById("cameraSnapshot");
+    const status = document.getElementById("cameraStatus");
+    const w = video.videoWidth, h = video.videoHeight;
+    if (!w || !h) { status.textContent = "Camera not ready — wait a moment."; return; }
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (_cameraFacing === "user") {
+      ctx.translate(w, 0); ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    snap.src = dataUrl; snap.style.display = "block";
+    video.style.display = "none";
+    document.getElementById("cameraCaptureBtn").style.display = "none";
+    document.getElementById("cameraRetakeBtn").style.display = "inline-block";
+    document.getElementById("cameraUseBtn").style.display = "inline-block";
+    status.textContent = "Looks good? Use this photo, or retake.";
+  }
+
+  function retakeFromCamera() {
+    document.getElementById("cameraSnapshot").style.display = "none";
+    document.getElementById("cameraVideo").style.display = "block";
+    document.getElementById("cameraCaptureBtn").style.display = "inline-block";
+    document.getElementById("cameraRetakeBtn").style.display = "none";
+    document.getElementById("cameraUseBtn").style.display = "none";
+    document.getElementById("cameraStatus").textContent = "Center your face, then tap Take photo.";
+  }
+
+  async function useCapturedPhoto() {
+    const canvas = document.getElementById("cameraCanvas");
+    canvas.toBlob(async (blob) => {
+      if (!blob) { alert("Capture failed."); return; }
+      const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
+      state.file = file;
+      closeCameraModal();
+      analyzeFile(file);
+    }, "image/jpeg", 0.92);
+  }
+
+  document.getElementById("cameraBtn").addEventListener("click", () => {
+    if (_isMobile()) {
+      _openNativeCamera();
+    } else {
+      openCameraModal();
+    }
+  });
+  document.getElementById("cameraInput").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    state.file = f;
+    analyzeFile(f);
+    e.target.value = "";
+  });
+  document.getElementById("cameraCloseBtn").addEventListener("click", closeCameraModal);
+  document.getElementById("cameraCaptureBtn").addEventListener("click", captureFromCamera);
+  document.getElementById("cameraRetakeBtn").addEventListener("click", retakeFromCamera);
+  document.getElementById("cameraUseBtn").addEventListener("click", useCapturedPhoto);
+  document.getElementById("cameraSwapBtn").addEventListener("click", async () => {
+    _cameraFacing = (_cameraFacing === "user") ? "environment" : "user";
+    if (_cameraStream) {
+      _cameraStream.getTracks().forEach(t => t.stop());
+      _cameraStream = null;
+    }
+    await openCameraModal();
+  });
+
+  show("upload");
+});
+</script>
+
+  <!-- ============= CAMERA MODAL ============= -->
+  <div id="cameraModal" style="display:none; position:fixed; inset:0; background:rgba(20,15,10,0.85);
+       z-index:10000; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:var(--card); border-radius:16px; padding:20px; max-width:560px; width:100%; box-shadow:var(--shadow);">
+      <h3 style="margin:0 0 12px; font-size:16px;">Take a photo</h3>
+      <div style="position:relative; background:#000; border-radius:10px; overflow:hidden; aspect-ratio:1/1;">
+        <video id="cameraVideo" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover; transform:scaleX(-1);"></video>
+        <canvas id="cameraCanvas" style="display:none;"></canvas>
+        <img id="cameraSnapshot" style="display:none; width:100%; height:100%; object-fit:cover;" />
+      </div>
+      <div id="cameraStatus" style="text-align:center; font-size:12px; color:var(--muted); margin-top:8px; min-height:16px;"></div>
+      <div style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:wrap;">
+        <button id="cameraCaptureBtn" class="primary" type="button">Take photo</button>
+        <button id="cameraRetakeBtn" type="button" style="display:none;">Retake</button>
+        <button id="cameraUseBtn" class="primary" type="button" style="display:none;">Use this photo</button>
+        <button id="cameraSwapBtn" type="button" title="Switch front/back camera">Switch camera</button>
+        <button id="cameraCloseBtn" class="ghost" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
