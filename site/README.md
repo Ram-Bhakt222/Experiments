@@ -1,70 +1,45 @@
-# vinext-starter
+# HALO Public Site
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+This is the hosted HALO web app. It keeps the original single-file HALO UI in
+`public/halo.html` and serves it through a small Next app.
 
-## Prerequisites
+Live production URL:
 
-- Node.js `>=22.13.0`
+```text
+https://site-mu-nine-30.vercel.app
+```
 
-## Quick Start
+## Commands
 
 ```bash
 npm install
-npm run dev
+npx next build
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+- `npx next build` validates the public Vercel deployment path.
+- `npm run build` validates the Sites/Vinext Worker build path.
 
-## Included Shape
+## Runtime Variables
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+Set these in the production host, not in Git:
 
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+OPENAI_API_KEY
+FAL_KEY
 ```
 
-## Useful Commands
+Optional:
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+```text
+HAIR_MODEL
+VIDEO_MODEL
+```
 
-## Learn More
+## Structure
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- `app/page.tsx` loads the HALO UI full-screen.
+- `app/api/halo/[...path]/route.ts` provides Vercel API endpoints for the
+  existing frontend routes like `/analyze`, `/generate-image`, and `/health`.
+- `worker/index.ts` keeps the Cloudflare/Sites Worker implementation.
+- `vercel.json` rewrites the legacy root API paths into the Next API route.
