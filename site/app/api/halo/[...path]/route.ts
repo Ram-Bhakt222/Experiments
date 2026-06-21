@@ -157,27 +157,88 @@ async function analyze(request: Request): Promise<Response> {
     ? `Analyze this person and return the JSON.\n\nUser context:\n${userContext}`
     : "Analyze this person and return the JSON.";
 
+  const firstAttempt = await requestOpenAIAnalysis(prompt, dataUrl, true);
+  if (!firstAttempt.ok) {
+    return json({ error: firstAttempt.error }, firstAttempt.status);
+  }
+
+  let content = firstAttempt.content;
+  if (!content.trim()) {
+    console.warn("HALO empty OpenAI analysis; retrying without JSON mode", {
+      finish_reason: firstAttempt.finishReason,
+      refusal: firstAttempt.refusal,
+      usage: firstAttempt.usage,
+    });
+    const retry = await requestOpenAIAnalysis(
+      `${prompt}\n\nReturn one valid JSON object only. Do not include markdown.`,
+      dataUrl,
+      false,
+    );
+    if (!retry.ok) {
+      return json({ error: retry.error }, retry.status);
+    }
+    content = retry.content;
+    if (!content.trim()) {
+      return json(
+        {
+          error:
+            retry.refusal ||
+            retry.finishReason ||
+            "OpenAI returned an empty analysis after retry",
+        },
+        502,
+      );
+    }
+  }
+
+  try {
+    const data = validateAnalysis(parseJsonObject(content));
+    data._analysis_id = crypto.randomUUID();
+    return json(data);
+  } catch (error) {
+    return json({ error: `Could not parse analysis JSON: ${String(error)}` }, 502);
+  }
+}
+
+async function requestOpenAIAnalysis(
+  prompt: string,
+  dataUrl: string,
+  jsonMode: boolean,
+): Promise<
+  | {
+      ok: true;
+      content: string;
+      finishReason: string;
+      refusal: string;
+      usage: unknown;
+    }
+  | { ok: false; error: string; status: number }
+> {
+  const body: Record<string, unknown> = {
+    model: process.env.HAIR_MODEL || DEFAULT_HAIR_MODEL,
+    max_tokens: 3000,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+  };
+  if (jsonMode) {
+    body.response_format = { type: "json_object" };
+  }
+
   const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: process.env.HAIR_MODEL || DEFAULT_HAIR_MODEL,
-      response_format: { type: "json_object" },
-      max_tokens: 3000,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: dataUrl } },
-          ],
-        },
-      ],
-    }),
+    body: JSON.stringify(body),
   });
 
   const payload = (await upstream.json().catch(() => ({}))) as Record<
@@ -185,24 +246,22 @@ async function analyze(request: Request): Promise<Response> {
     unknown
   >;
   if (!upstream.ok) {
-    return json(
-      { error: nestedString(payload, ["error", "message"]) || `OpenAI error ${upstream.status}` },
-      upstream.status,
-    );
+    return {
+      ok: false,
+      error:
+        nestedString(payload, ["error", "message"]) ||
+        `OpenAI error ${upstream.status}`,
+      status: upstream.status,
+    };
   }
 
-  const content = getOpenAIContent(payload);
-  if (!content.trim()) {
-    return json({ error: "OpenAI returned an empty analysis" }, 502);
-  }
-
-  try {
-    const data = validateAnalysis(JSON.parse(content));
-    data._analysis_id = crypto.randomUUID();
-    return json(data);
-  } catch (error) {
-    return json({ error: `Could not parse analysis JSON: ${String(error)}` }, 502);
-  }
+  return {
+    ok: true,
+    content: getOpenAIContent(payload),
+    finishReason: getOpenAIFinishReason(payload),
+    refusal: getOpenAIRefusal(payload),
+    usage: payload.usage,
+  };
 }
 
 async function generateImage(request: Request): Promise<Response> {
@@ -479,6 +538,19 @@ function nestedString(source: unknown, path: string[]): string {
   return typeof cursor === "string" ? cursor : "";
 }
 
+function parseJsonObject(text: string): unknown {
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const match = trimmed.match(/\{[\s\S]*\}/);
+    if (!match) {
+      throw new Error("No JSON object found in model output");
+    }
+    return JSON.parse(match[0]);
+  }
+}
+
 function getOpenAIContent(payload: Record<string, unknown>): string {
   const choices = payload.choices;
   if (!Array.isArray(choices)) {
@@ -492,5 +564,41 @@ function getOpenAIContent(payload: Record<string, unknown>): string {
   if (!isRecord(message)) {
     return "";
   }
-  return typeof message.content === "string" ? message.content : "";
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        if (!isRecord(part)) {
+          return "";
+        }
+        return stringField(part, "text") || stringField(part, "content");
+      })
+      .join("");
+  }
+  return "";
+}
+
+function getOpenAIFinishReason(payload: Record<string, unknown>): string {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || !isRecord(choices[0])) {
+    return "";
+  }
+  return stringField(choices[0], "finish_reason");
+}
+
+function getOpenAIRefusal(payload: Record<string, unknown>): string {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || !isRecord(choices[0])) {
+    return "";
+  }
+  const message = choices[0].message;
+  if (!isRecord(message)) {
+    return "";
+  }
+  return stringField(message, "refusal");
 }
