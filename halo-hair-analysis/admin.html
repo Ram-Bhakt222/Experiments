@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HALO Admin — past sessions</title>
+<style>
+  :root {
+    --bg: #0e0f12;
+    --panel: #15171c;
+    --panel-2: #1c1f26;
+    --line: #2a2e38;
+    --text: #e6e8ee;
+    --muted: #8a92a3;
+    --accent: #7cb7ff;
+    --good: #6ee7a8;
+    --best: #a78bfa;
+    --avoid: #f87171;
+    --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  .sidebar { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; }
+  .sidebar-head {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0;
+    background: var(--panel); z-index: 2;
+  }
+  .sidebar-head h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .sidebar-head .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .sidebar-head .refresh {
+    margin-top: 10px;
+    background: transparent; color: var(--accent); border: 1px solid var(--line);
+    padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  }
+  .sidebar-head .refresh:hover { background: var(--panel-2); }
+  .session-list { list-style: none; padding: 0; margin: 0; }
+  .session-item {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    cursor: pointer; transition: background 0.15s;
+  }
+  .session-item:hover { background: var(--panel-2); }
+  .session-item.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 15px; }
+  .session-item .when { font-size: 12px; color: var(--muted); }
+  .session-item .title { font-weight: 500; margin-top: 2px; font-size: 13px; }
+  .session-item .stats { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .session-item .sid { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--muted); margin-top: 2px; opacity: 0.7; }
+
+  .main { overflow-y: auto; padding: 24px 32px 80px; }
+  .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 14px; }
+
+  .detail-head { display: grid; grid-template-columns: 240px 1fr; gap: 24px; margin-bottom: 24px; }
+  .photo-box {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; aspect-ratio: 3/4;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .photo-box img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-box .nophoto { color: var(--muted); font-size: 12px; padding: 16px; text-align: center; }
+
+  .summary-box h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .summary-box .subhead { color: var(--muted); margin-bottom: 16px; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .pill {
+    background: var(--panel-2); border: 1px solid var(--line);
+    padding: 4px 10px; border-radius: 999px; font-size: 12px;
+  }
+  .pill .k { color: var(--muted); margin-right: 4px; }
+  .pill .v { color: var(--text); }
+  .bottom-line {
+    background: var(--panel); border-left: 3px solid var(--accent);
+    padding: 12px 16px; border-radius: 6px; font-style: italic; color: #c8cdd9;
+  }
+
+  .palette { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+  .swatch {
+    width: 28px; height: 28px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .section-head {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 28px; margin-bottom: 12px;
+  }
+  .section-head h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .section-head .count { color: var(--muted); font-size: 12px; }
+  .section-head .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .section-head.best .dot { background: var(--best); }
+  .section-head.good .dot { background: var(--good); }
+  .section-head.avoid .dot { background: var(--avoid); }
+  .section-head.video .dot { background: var(--accent); }
+  .section-head.meta .dot { background: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .asset {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .asset .media { aspect-ratio: 1/1; background: var(--bg); }
+  .asset .media img, .asset .media video { width: 100%; height: 100%; object-fit: cover; }
+  .asset .media a { display: block; height: 100%; }
+  .asset .lbl { padding: 8px 10px; font-size: 12px; }
+  .asset .lbl .name { font-weight: 500; }
+  .asset .lbl .cat { color: var(--muted); font-size: 11px; margin-top: 2px; text-transform: capitalize; }
+
+  details.raw {
+    margin-top: 28px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 16px;
+  }
+  details.raw summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  details.raw pre {
+    margin: 12px 0 0; white-space: pre-wrap; word-break: break-word;
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #b8bdca;
+    max-height: 400px; overflow-y: auto;
+  }
+
+  .key-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-top: 12px; }
+  .kv { display: flex; gap: 10px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .kv .k { color: var(--muted); min-width: 110px; }
+  .kv .v { color: var(--text); flex: 1; word-break: break-word; }
+
+  .quick-tips { margin: 8px 0 0; padding-left: 18px; color: #c8cdd9; }
+  .quick-tips li { margin-bottom: 4px; }
+
+  .err {
+    background: #2a1418; border: 1px solid #5a1f25; color: #fca5a5;
+    padding: 12px 16px; border-radius: 8px; margin: 20px;
+  }
+
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { max-height: 240px; }
+    .detail-head { grid-template-columns: 1fr; }
+    .photo-box { max-width: 240px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <h1>HALO Admin</h1>
+      <div class="meta" id="meta">Loading…</div>
+      <button class="refresh" onclick="load()">↻ Refresh</button>
+    </div>
+    <ul class="session-list" id="list"></ul>
+  </aside>
+  <main class="main" id="main">
+    <div class="empty">Pick a session from the left.</div>
+  </main>
+</div>
+
+<script>
+let DATA = [];
+let SELECTED = null;
+
+async function load() {
+  document.getElementById("meta").textContent = "Loading…";
+  document.getElementById("list").innerHTML = "";
+  try {
+    const r = await fetch("/admin/data", { cache: "no-store" });
+    const j = await r.json();
+    if (j.error) {
+      document.getElementById("main").innerHTML =
+        `<div class="err">Couldn't load: ${escapeHtml(j.error)}</div>`;
+      document.getElementById("meta").textContent = "error";
+      return;
+    }
+    DATA = j.analyses || [];
+    document.getElementById("meta").textContent =
+      `${j.count} session${j.count === 1 ? "" : "s"} stored`;
+    renderList();
+    if (DATA.length) selectSession(DATA[0].id);
+    else document.getElementById("main").innerHTML =
+      `<div class="empty">No analyses yet. Run one through the front-end to see it here.</div>`;
+  } catch (e) {
+    document.getElementById("main").innerHTML =
+      `<div class="err">Network error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderList() {
+  const list = document.getElementById("list");
+  list.innerHTML = DATA.map(a => {
+    const when = formatWhen(a.created_at);
+    const ha = a.analysis_json || {};
+    const title = (ha.hair && (ha.hair.subhead || ha.hair.headline)) ||
+                  (ha.hair && ha.hair.type) || "(no title)";
+    const assetCount = (a.assets || []).length;
+    return `<li class="session-item ${a.id === SELECTED ? 'active' : ''}"
+                onclick="selectSession('${a.id}')">
+      <div class="when">${when}</div>
+      <div class="title">${escapeHtml(title)}</div>
+      <div class="stats">${assetCount} asset${assetCount === 1 ? "" : "s"}</div>
+      <div class="sid">${a.id.slice(0,8)}…</div>
+    </li>`;
+  }).join("");
+}
+
+function selectSession(id) {
+  SELECTED = id;
+  renderList();
+  const a = DATA.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById("main").innerHTML = renderDetail(a);
+}
+
+function renderDetail(a) {
+  const ha = (a.analysis_json && a.analysis_json.hair) || {};
+  const ca = (a.analysis_json && a.analysis_json.color) || {};
+  const assets = a.assets || [];
+
+  const byCat = { best: [], good: [], avoid: [] };
+  const videos = [];
+  assets.forEach(x => {
+    if (x.kind === "video") { videos.push(x); return; }
+    const cat = (x.category || "").toLowerCase();
+    if (byCat[cat]) byCat[cat].push(x);
+    else byCat.good.push(x);
+  });
+
+  const palette = (ca.palette || []).map(p => {
+    const hex = (p.hex || p) + "";
+    return `<div class="swatch" style="background:${escapeAttr(hex)}" title="${escapeAttr(hex)}"></div>`;
+  }).join("");
+
+  const tips = (ha.quick_tips || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
+  const goals = (ha.key_goals || []).map(g => `<li>${escapeHtml(g)}</li>`).join("");
+
+  return `
+    <div class="detail-head">
+      <div class="photo-box">
+        ${a.photo_url
+          ? `<img src="${escapeAttr(a.photo_url)}" alt="uploaded photo" />`
+          : `<div class="nophoto">No photo URL on file<br/>(may be in-memory only)</div>`}
+      </div>
+      <div class="summary-box">
+        <h2>${escapeHtml(ha.headline || ha.type || "Analysis")}</h2>
+        <div class="subhead">${escapeHtml(ha.subhead || "")}</div>
+        <div class="pill-row">
+          ${ha.type ? `<span class="pill"><span class="k">type</span><span class="v">${escapeHtml(ha.type)}</span></span>` : ""}
+          ${ha.density ? `<span class="pill"><span class="k">density</span><span class="v">${escapeHtml(ha.density)}</span></span>` : ""}
+          ${ha.texture ? `<span class="pill"><span class="k">texture</span><span class="v">${escapeHtml(ha.texture)}</span></span>` : ""}
+          ${ha.face_shape ? `<span class="pill"><span class="k">face</span><span class="v">${escapeHtml(ha.face_shape)}</span></span>` : ""}
+          ${ha.best_part ? `<span class="pill"><span class="k">part</span><span class="v">${escapeHtml(ha.best_part)}</span></span>` : ""}
+          ${ca.season ? `<span class="pill"><span class="k">season</span><span class="v">${escapeHtml(ca.season)}</span></span>` : ""}
+        </div>
+        ${ha.bottom_line ? `<div class="bottom-line">${escapeHtml(ha.bottom_line)}</div>` : ""}
+        ${palette ? `<div class="section-head meta"><span class="dot"></span><h3>Color palette</h3></div><div class="palette">${palette}</div>` : ""}
+      </div>
+    </div>
+
+    ${renderSection("best", "Best styles", byCat.best)}
+    ${renderSection("good", "Good options", byCat.good)}
+    ${renderSection("avoid", "Avoid", byCat.avoid)}
+    ${videos.length ? renderVideos(videos) : ""}
+
+    ${(tips || goals) ? `
+      <div class="section-head meta"><span class="dot"></span><h3>Goals &amp; tips</h3></div>
+      <div class="key-list">
+        ${goals ? `<div><div class="kv"><div class="k">Key goals</div></div><ul class="quick-tips">${goals}</ul></div>` : ""}
+        ${tips ? `<div><div class="kv"><div class="k">Quick tips</div></div><ul class="quick-tips">${tips}</ul></div>` : ""}
+      </div>` : ""}
+
+    <div class="section-head meta"><span class="dot"></span><h3>Session metadata</h3></div>
+    <div class="key-list">
+      <div class="kv"><div class="k">Session ID</div><div class="v">${escapeHtml(a.id)}</div></div>
+      <div class="kv"><div class="k">Anon session</div><div class="v">${escapeHtml(a.anon_session || "")}</div></div>
+      <div class="kv"><div class="k">Created</div><div class="v">${formatWhen(a.created_at)} UTC</div></div>
+      <div class="kv"><div class="k">Total assets</div><div class="v">${assets.length}</div></div>
+    </div>
+
+    <details class="raw">
+      <summary>Raw analysis JSON</summary>
+      <pre>${escapeHtml(JSON.stringify(a.analysis_json, null, 2))}</pre>
+    </details>
+  `;
+}
+
+function renderSection(cat, label, items) {
+  if (!items.length) return "";
+  return `
+    <div class="section-head ${cat}"><span class="dot"></span><h3>${label}</h3><span class="count">${items.length}</span></div>
+    <div class="grid">
+      ${items.map(x => `
+        <div class="asset">
+          <div class="media"><a href="${escapeAttr(x.storage_url)}" target="_blank" rel="noopener">
+            <img loading="lazy" src="${escapeAttr(x.storage_url)}" alt="${escapeAttr(x.label || '')}" />
+          </a></div>
+          <div class="lbl">
+            <div class="name">${escapeHtml(x.label || "(unlabeled)")}</div>
+            <div class="cat">${escapeHtml(x.category || "")}</div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderVideos(items) {
+  return `
+    <div class="section-head video"><span class="dot"></span><h3>Videos</h3><span class="count">${items.length}</span></div>
+    <div class="grid">
+      ${items.map(x => `
+        <div class="asset">
+          <div class="media"><video src="${escapeAttr(x.storage_url)}" controls preload="metadata"></video></div>
+          <div class="lbl">
+            <div class="name">${escapeHtml(x.label || "(unlabeled)")}</div>
+            <div class="cat">${escapeHtml(x.category || "")}</div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function formatWhen(iso) {
+  if (!iso) return "(no date)";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      year: "numeric", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+  } catch { return iso; }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+load();
+</script>
+</body>
+</html>

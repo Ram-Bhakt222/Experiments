@@ -1,0 +1,17 @@
+name: HALO
+options:
+  bundleIdPrefix: com.halo
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  HALO:
+    type: application
+    platform: iOS
+    sources:
+      - HALO
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.halo.app
+        INFOPLIST_FILE: HALO/Info.plist
+        TARGETED_DEVICE_FAMILY: 1
+        SWIFT_VERSION: 5.0

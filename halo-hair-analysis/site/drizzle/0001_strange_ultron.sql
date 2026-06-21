@@ -1,0 +1,1 @@
+CREATE INDEX `halo_leads_email_idx` ON `halo_leads` (`email`);

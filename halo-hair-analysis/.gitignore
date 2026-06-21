@@ -12,7 +12,14 @@ __pycache__/
 *.pyo
 *.pyd
 .venv/
+.venv-macos/
 venv/
+
+# App packaging
+build/
+dist/
+*.spec
+ios/HALO/HALO.xcodeproj/
 
 # OS
 .DS_Store

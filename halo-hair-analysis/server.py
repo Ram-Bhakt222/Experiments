@@ -16,6 +16,7 @@ import csv
 import json
 import os
 import re
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -33,15 +34,41 @@ try:
 except ImportError:
     fal_client = None
 
-HERE = Path(__file__).parent.resolve()
-LEADS_CSV = HERE / "leads.csv"
-ENV_CANDIDATES = [
+try:
+    from supabase import create_client as _create_sb_client
+except ImportError:
+    _create_sb_client = None
+
+# --- LOCAL SDXL OPTION (alternative to FAL nano-banana) ---
+try:
+    from sdxl_integration import get_generator
+    SDXL_ENABLED = True
+except ImportError:
+    SDXL_ENABLED = False
+    get_generator = None
+
+def _resource_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS).resolve()
+    return Path(__file__).parent.resolve()
+
+
+HERE = _resource_dir()
+DATA_DIR = Path(os.environ.get("HALO_DATA_DIR", HERE)).expanduser()
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    DATA_DIR = HERE
+LEADS_CSV = DATA_DIR / "leads.csv"
+_ENV_CANDIDATES = [
     HERE / ".env",
+    DATA_DIR / ".env",
     Path.home() / "Desktop" / "Strategy AGI" / "agentfield" / ".env",
     Path.home() / "Desktop" / "Strategy AGI" / ".env",
     HERE.parent / "Strategy AGI" / "agentfield" / ".env",
     HERE.parent / "Strategy AGI" / ".env",
 ]
+ENV_CANDIDATES = list(dict.fromkeys(_ENV_CANDIDATES))
 
 
 def load_env():
@@ -63,12 +90,30 @@ def load_env():
 load_env()
 OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
 FAL_KEY = os.environ.get("FAL_API_KEY") or os.environ.get("FAL_KEY")
-if not OPENAI_KEY:
-    raise SystemExit("OPENAI_API_KEY not found in any .env.")
 if FAL_KEY and not os.environ.get("FAL_KEY"):
     os.environ["FAL_KEY"] = FAL_KEY
 
-openai_client = OpenAI(api_key=OPENAI_KEY)
+openai_client = OpenAI(api_key=OPENAI_KEY) if OPENAI_KEY else None
+
+# Supabase clients
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "halo-assets")
+sb_admin = None  # service_role client (bypasses RLS)
+if SUPABASE_URL and SUPABASE_SERVICE_KEY and _create_sb_client:
+    try:
+        sb_admin = _create_sb_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        print(f"[supabase] connected as service_role -> {SUPABASE_URL}")
+    except Exception as _e:
+        print(f"[supabase] init failed: {_e}")
+        sb_admin = None
+else:
+    print("[supabase] not configured (SUPABASE_URL/SERVICE_KEY/supabase-py missing) - persistence disabled")
+
+# In-memory job tracking: maps FAL request_id -> {analysis_id, label, kind, category}
+# Lost on server restart, fine for in-flight jobs only.
+_pending_assets: dict = {}
 MODEL = os.environ.get("HAIR_MODEL", "gpt-4o")
 IMAGE_MODEL = "fal-ai/flux/schnell"
 VIDEO_MODEL = os.environ.get("VIDEO_MODEL", "fal-ai/kling-video/v1.6/standard/image-to-video")
@@ -84,6 +129,82 @@ def _no_cache(resp):
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
+
+
+# ------------------- SUPABASE HELPERS -------------------
+import secrets as _secrets
+import uuid as _uuid
+import mimetypes as _mimetypes
+
+
+def _anon_session_id():
+    """Read the anon_session cookie or mint a new one. Returns the id."""
+    sid = request.cookies.get("halo_anon")
+    if not sid:
+        sid = _secrets.token_urlsafe(24)
+    return sid
+
+
+def _attach_anon_cookie(resp, sid):
+    """Set/refresh the anon_session cookie on the response (1 year)."""
+    resp.set_cookie("halo_anon", sid, max_age=31536000, samesite="Lax", httponly=True)
+    return resp
+
+
+def _mirror_to_storage(remote_url: str, kind: str = "image") -> str | None:
+    """Download a URL (FAL CDN) and re-upload to Supabase Storage. Returns public URL."""
+    if not sb_admin or not remote_url:
+        return None
+    try:
+        r = httpx.get(remote_url, timeout=30.0)
+        r.raise_for_status()
+        ext = ".jpg" if kind == "image" else ".mp4"
+        ct, _ = _mimetypes.guess_type(remote_url)
+        if not ct:
+            ct = "image/jpeg" if kind == "image" else "video/mp4"
+        path = f"{kind}s/{_uuid.uuid4().hex}{ext}"
+        sb_admin.storage.from_(SUPABASE_BUCKET).upload(
+            path=path, file=r.content,
+            file_options={"content-type": ct, "upsert": "true"})
+        public_url = sb_admin.storage.from_(SUPABASE_BUCKET).get_public_url(path)
+        return public_url
+    except Exception as e:
+        print(f"[mirror] {kind} failed: {e}")
+        return None
+
+
+def _persist_analysis(anon_session: str, photo_url: str | None, analysis_json: dict) -> str | None:
+    """Insert row into halo_analyses, return new id."""
+    if not sb_admin:
+        return None
+    try:
+        result = sb_admin.table("halo_analyses").insert({
+            "anon_session": anon_session,
+            "photo_url": photo_url,
+            "analysis_json": analysis_json,
+        }).execute()
+        if result.data:
+            return result.data[0]["id"]
+    except Exception as e:
+        print(f"[persist] analysis insert failed: {e}")
+    return None
+
+
+def _persist_asset(analysis_id: str, label: str, kind: str, category: str, storage_url: str):
+    """Insert row into halo_style_assets."""
+    if not sb_admin or not analysis_id or not storage_url:
+        return
+    try:
+        sb_admin.table("halo_style_assets").insert({
+            "analysis_id": analysis_id,
+            "label": label,
+            "kind": kind,
+            "category": category,
+            "storage_url": storage_url,
+        }).execute()
+    except Exception as e:
+        print(f"[persist] asset insert failed: {e}")
+
 
 SYSTEM_PROMPT = """You are HALO, a senior salon stylist and seasonal color
 consultant who gives kind, distinctive, identity-forward style direction. You
@@ -236,6 +357,18 @@ def index():
     return send_from_directory(str(HERE), "index.html")
 
 
+@app.route("/db-health")
+def db_health():
+    """Quick test that Supabase is reachable + halo_ tables exist."""
+    if not sb_admin:
+        return jsonify({"ok": False, "error": "supabase not configured"}), 503
+    try:
+        r = sb_admin.table("halo_analyses").select("id", count="exact").limit(0).execute()
+        return jsonify({"ok": True, "halo_analyses_count": r.count, "bucket": SUPABASE_BUCKET})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/health")
 def health():
     return jsonify({
@@ -255,6 +388,8 @@ def _count_leads():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    if not openai_client:
+        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
     if "image" not in request.files:
         return jsonify({"error": "no image uploaded"}), 400
     f = request.files["image"]; raw = f.read()
@@ -296,7 +431,27 @@ def analyze():
         )
         text = resp.choices[0].message.content or ""
         data = validate_analysis(extract_json(text))
-        return jsonify(data)
+        # Persist to Supabase (best effort - never fail the request on DB error)
+        sid = _anon_session_id()
+        # Photo mirror: re-upload the original photo to Supabase storage so the report
+        # is permanent (FAL hosts photos but we save to our own bucket too).
+        photo_url = None
+        try:
+            mime_ext = ".jpg" if mime.endswith("jpeg") else ".png"
+            path = f"photos/{_uuid.uuid4().hex}{mime_ext}"
+            if sb_admin:
+                sb_admin.storage.from_(SUPABASE_BUCKET).upload(
+                    path=path, file=raw,
+                    file_options={"content-type": mime, "upsert": "true"})
+                photo_url = sb_admin.storage.from_(SUPABASE_BUCKET).get_public_url(path)
+        except Exception as _e:
+            print(f"[analyze] photo mirror failed: {_e}")
+        analysis_id = _persist_analysis(sid, photo_url, data)
+        if analysis_id:
+            data["_analysis_id"] = analysis_id
+            data["_photo_storage_url"] = photo_url
+        resp_json = jsonify(data)
+        return _attach_anon_cookie(resp_json, sid)
     except Exception as e:
         print(f"[analyze] error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -351,6 +506,8 @@ def generate_image():
         return jsonify({"error": "missing label"}), 400
     if not reference_url:
         return jsonify({"error": "missing reference_url - upload photo first"}), 400
+    analysis_id = body.get("analysis_id")
+    category = body.get("category", "best")
 
     color = hair.get("color","natural").lower()
     htype = hair.get("type","natural").lower()
@@ -393,7 +550,13 @@ def generate_image():
             timeout=15.0)
         r.raise_for_status()
         data = r.json()
-        return jsonify({"request_id": data.get("request_id"), "label": label})
+        req_id = data.get("request_id")
+        if req_id and analysis_id:
+            _pending_assets[req_id] = {
+                "analysis_id": analysis_id, "label": label,
+                "kind": "image", "category": category,
+            }
+        return jsonify({"request_id": req_id, "label": label})
     except httpx.HTTPStatusError as e:
         body_text = e.response.text[:300] if hasattr(e,"response") else ""
         print(f"[generate-image] FAL HTTP {e.response.status_code}: {body_text}")
@@ -420,8 +583,67 @@ def image_result(request_id):
         r = httpx.get(
             f"https://queue.fal.run/{IMAGE_BASE_PATH}/requests/{request_id}",
             headers={"Authorization": f"Key {FAL_KEY}"}, timeout=15.0)
-        return jsonify(r.json())
+        result = r.json()
+        # Mirror the resulting image to Supabase + persist asset row (idempotent via _pending_assets pop)
+        meta = _pending_assets.pop(request_id, None)
+        if meta and result.get("images"):
+            fal_url = result["images"][0].get("url")
+            if fal_url:
+                sb_url = _mirror_to_storage(fal_url, kind="image")
+                if sb_url:
+                    _persist_asset(meta["analysis_id"], meta["label"], "image", meta["category"], sb_url)
+                    # swap the URL in the response so frontend uses our CDN URL
+                    result["images"][0]["url"] = sb_url
+        return jsonify(result)
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+@app.route("/generate-image-local", methods=["POST"])
+def generate_image_local():
+    """Generate hairstyle image using local SDXL (no FAL required)."""
+    if not SDXL_ENABLED:
+        return jsonify({"error": "SDXL not installed. Run: pip install sdxl_integration"}), 503
+    
+    body = request.get_json(silent=True) or {}
+    label = (body.get("label") or "").strip()
+    description = (body.get("description") or "").strip()
+    category = body.get("category", "best")
+    analysis_id = body.get("analysis_id")
+    
+    if not label:
+        return jsonify({"error": "missing label"}), 400
+    if not description:
+        description = f"Professional hairstyle portrait: {label}"
+    
+    try:
+        gen = get_generator()
+        img = gen.generate(
+            prompt=description,
+            steps=20,
+            guidance_scale=7.5
+        )
+        
+        out_dir = Path(DATA_DIR) / "generated_images"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{analysis_id}_{label.replace(' ', '_')}.png"
+        gen.save(img, str(out_path))
+        
+        import base64
+        with open(out_path, "rb") as f:
+            img_base64 = base64.b64encode(f.read()).decode()
+        
+        return jsonify({
+            "request_id": f"local_{analysis_id}_{label}",
+            "label": label,
+            "image_url": f"data:image/png;base64,{img_base64}",
+            "local_path": str(out_path)
+        })
+    
+    except Exception as e:
+        print(f"[generate-image-local] error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -464,7 +686,17 @@ def generate_video():
             timeout=15.0)
         r.raise_for_status()
         data = r.json()
-        return jsonify({"request_id": data.get("request_id"), "image_url": image_url})
+        req_id = data.get("request_id")
+        body = request.get_json(silent=True) or {}
+        analysis_id = body.get("analysis_id")
+        label = body.get("label", "video")
+        category = body.get("category", "best")
+        if req_id and analysis_id:
+            _pending_assets[req_id] = {
+                "analysis_id": analysis_id, "label": label,
+                "kind": "video", "category": category,
+            }
+        return jsonify({"request_id": req_id, "image_url": image_url})
     except httpx.HTTPStatusError as e:
         body_text = e.response.text[:300] if hasattr(e,"response") else ""
         print(f"[generate-video] FAL HTTP {e.response.status_code}: {body_text}")
@@ -491,7 +723,19 @@ def video_result(request_id):
         r = httpx.get(
             f"https://queue.fal.run/{VIDEO_BASE_PATH}/requests/{request_id}",
             headers={"Authorization": f"Key {FAL_KEY}"}, timeout=15.0)
-        return jsonify(r.json())
+        result = r.json()
+        meta = _pending_assets.pop(request_id, None)
+        video = result.get("video") or {}
+        fal_url = video.get("url") or result.get("url")
+        if meta and fal_url:
+            sb_url = _mirror_to_storage(fal_url, kind="video")
+            if sb_url:
+                _persist_asset(meta["analysis_id"], meta["label"], "video", meta["category"], sb_url)
+                if "video" in result:
+                    result["video"]["url"] = sb_url
+                else:
+                    result["url"] = sb_url
+        return jsonify(result)
     except Exception as e:
         print(f"[video-result] {e}")
         return jsonify({"error":str(e)}), 500
@@ -522,11 +766,54 @@ def save_lead():
     return jsonify({"ok": True, "total_leads": _count_leads()})
 
 
+# --- ADMIN (browse past sessions) ---
+@app.route("/admin")
+def admin_page():
+    return send_from_directory(HERE, "admin.html")
+
+
+@app.route("/admin/data")
+def admin_data():
+    """Returns all analyses + their assets, newest first.
+    No auth — leave private (don't link from index.html)."""
+    if not sb_admin:
+        return jsonify({"error": "Supabase not configured", "analyses": [], "count": 0}), 503
+    try:
+        an = sb_admin.table("halo_analyses").select("*").order(
+            "created_at", desc=True
+        ).limit(200).execute()
+        analyses = an.data or []
+        if analyses:
+            ids = [a["id"] for a in analyses]
+            assets = sb_admin.table("halo_style_assets").select("*").in_(
+                "analysis_id", ids
+            ).order("created_at", desc=False).execute()
+            by_aid: dict = {}
+            for a in (assets.data or []):
+                by_aid.setdefault(a["analysis_id"], []).append(a)
+            for a in analyses:
+                a["assets"] = by_aid.get(a["id"], [])
+        return jsonify({"ok": True, "count": len(analyses), "analyses": analyses})
+    except Exception as e:
+        print(f"[admin] data fetch failed: {e}")
+        return jsonify({"error": str(e), "analyses": [], "count": 0}), 500
+
+
+# --- HALO STUDIO (the Atelier) ---
+try:
+    from studio import register_studio
+    register_studio(app)
+except Exception as _studio_e:
+    print(f"[studio] not mounted: {_studio_e}")
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT","8765"))
+    port = int(os.environ.get("PORT", "8765"))
     print(f"\n  HALO - Personal Style Analysis at http://localhost:{port}")
+    print(f"  HALO STUDIO (Atelier) at        http://localhost:{port}/studio/")
     print(f"  OpenAI:    {'OK' if OPENAI_KEY else 'MISSING'}    Model: {MODEL}")
     print(f"  FAL key:   {'OK' if FAL_KEY else 'MISSING'}")
     print(f"  fal-client:{'OK' if fal_client else 'MISSING'}")
+    print(f"  Supabase:  {'OK (persistence enabled)' if sb_admin else 'MISSING (analyses not persisted)'}")
     print(f"  Leads:     {_count_leads()} captured ({LEADS_CSV})\n")
     app.run(host="127.0.0.1", port=port, debug=False)

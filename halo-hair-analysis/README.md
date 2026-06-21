@@ -1,6 +1,12 @@
 # HALO — AI Hair & Color Analysis
 
-A local web app that takes a portrait photo and returns a personalized salon-style consultation: hair type, face shape, recommended cuts (with photorealistic preview images), styles to avoid, color season, palette, and short hair-motion videos so you can see each cut in action.
+A web app that takes a portrait photo and returns a personalized salon-style consultation: hair type, face shape, recommended cuts (with photorealistic preview images), styles to avoid, color season, palette, and short hair-motion videos so you can see each cut in action.
+
+## Live site
+
+Public no-login deployment: https://site-mu-nine-30.vercel.app
+
+The hosted app runs from `site/` on Vercel. Runtime API keys are configured as Vercel production environment variables, not committed to GitHub.
 
 ## Features
 
@@ -58,6 +64,43 @@ Open an issue on GitHub or text me directly. Screenshots are gold.
 pip install flask openai httpx fal-client
 python server.py
 ```
+
+## macOS desktop app
+
+Build this on macOS:
+
+```bash
+./script/build_and_run.sh
+```
+
+The script creates a local `.venv-macos`, installs the desktop dependencies,
+builds `dist/HALO.app` with PyInstaller, starts the bundled Flask backend on
+localhost, and opens HALO in a native WebKit window.
+
+Secrets are not bundled into the app. Put `OPENAI_API_KEY` and `FAL_API_KEY` in
+either the project `.env` while developing, or in:
+
+```text
+~/Library/Application Support/HALO/.env
+```
+
+## iPhone app
+
+The starter SwiftUI app lives in `ios/HALO`. It keeps credentials off-device:
+the iPhone app only calls the HALO backend, while OpenAI, FAL, and Supabase
+service keys stay server-side.
+
+On macOS, generate the Xcode project with:
+
+```bash
+brew install xcodegen
+cd ios/HALO
+xcodegen generate
+open HALO.xcodeproj
+```
+
+For the full system diagram and credential boundary, see
+[`docs/SYSTEM_CHANGES.md`](docs/SYSTEM_CHANGES.md).
 
 ## Architecture
 
