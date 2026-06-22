@@ -1,0 +1,8 @@
+.env
+.venv/
+.edge-profile/
+__pycache__/
+*.pyc
+*.log
+*.err
+unified-dashboard-screenshot.png

@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Doc Dashboard — How To</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; --bg:#0e0e10; --fg:#eaeaea; --muted:#9aa0a6; --card:#1a1a1f; --accent:#7c5cff; --good:#3ddc84; --bad:#ff5a5f; --warn:#ffb020; --code:#101015; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--fg); }
+    header { padding:14px 20px; display:flex; align-items:center; gap:16px; border-bottom:1px solid #25252c; position:sticky; top:0; background:var(--bg); z-index:5;}
+    header h1 { margin:0; font-size:16px; letter-spacing:.3px; }
+    header .links a { color:var(--muted); margin-right:14px; text-decoration:none; font-size:12px; }
+    header .links a:hover { color: var(--fg); }
+    main { padding:24px; max-width:1100px; margin:0 auto; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing:1.2px; color:var(--muted); margin: 32px 0 10px; border-top:1px solid #25252c; padding-top: 24px; }
+    h2:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+    h3 { margin: 18px 0 4px; font-size:14px; }
+    p { color: #cfd2d6; }
+    code, pre { background: var(--code); border:1px solid #25252c; border-radius:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+    code { padding: 1px 6px; }
+    pre { padding: 12px 14px; overflow-x: auto; }
+    .card { background:var(--card); border:1px solid #25252c; border-radius:12px; padding:14px 18px; margin-bottom:14px; }
+    .pill { display:inline-block; padding:2px 7px; border-radius:6px; background:#25252c; font-size:10px; color:var(--muted); text-transform: uppercase; letter-spacing:.8px; margin-right:6px; }
+    .pill.audio { background:#1f3b2a; color:#7be6a8; }
+    .pill.video { background:#3b1f33; color:#e879c4; }
+    .pill.docs  { background:#1f2c3b; color:#7ab8ff; }
+    .pill.ai    { background:#3b2f1f; color:#ffcb7a; }
+    table.tile-tbl { width:100%; border-collapse: collapse; margin-top:6px; }
+    table.tile-tbl td { padding: 6px 8px; vertical-align: top; font-size: 13px; border-top: 1px solid #25252c; }
+    table.tile-tbl td:first-child { color: var(--muted); width: 130px; }
+    .ok    { color: var(--good); }
+    .warn  { color: var(--warn); }
+    .bad   { color: var(--bad); }
+    .toc   { background: var(--card); border:1px solid #25252c; border-radius:12px; padding: 12px 18px; margin-bottom: 24px; }
+    .toc a { color: var(--fg); text-decoration: none; }
+    .toc ul { margin: 6px 0; padding-left: 18px; }
+    .toc li { margin: 2px 0; }
+    .copybtn { float:right; background:#25252c; color:var(--muted); border:0; padding:2px 8px; border-radius:6px; cursor:pointer; font-size: 11px;}
+    .copybtn:hover { background:#333; color: var(--fg); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Doc Dashboard — How To</h1>
+    <span class="links" style="margin-left:auto">
+      <a href="/">← Back to dashboard</a>
+      <a href="http://localhost:8780" target="_blank">AI Video Studio</a>
+      <a href="http://localhost:8765" target="_blank">HALO</a>
+      <a href="http://localhost:8787" target="_blank">Cockpit</a>
+    </span>
+  </header>
+
+  <main>
+
+    <div class="toc">
+      <strong>On this page</strong>
+      <ul>
+        <li><a href="#start">1. Starting and stopping the dashboard</a></li>
+        <li><a href="#layout">2. The interface, in one sentence</a></li>
+        <li><a href="#tiles">3. Every tile, explained</a></li>
+        <li><a href="#outputs">4. Where outputs land</a></li>
+        <li><a href="#auth">5. Logins and multi-user</a></li>
+        <li><a href="#cli">6. CLI mode (no dashboard)</a></li>
+        <li><a href="#recipes">7. Recipes — chaining tiles</a></li>
+        <li><a href="#trouble">8. Troubleshooting</a></li>
+      </ul>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="start">1. Starting and stopping the dashboard</h2>
+
+    <div class="card">
+      <h3>First-time launch</h3>
+      <p>Double-click <code>Run Dashboard.bat</code> in the dashboard folder. The first run builds a <code>.venv</code> and installs requirements (≈2–3 min). After that, every launch is fast.</p>
+      <p>Or from PowerShell:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>cd "C:\Users\ram\Desktop\programming projects (other)\Experiments\dashboard"
+.\"Run Dashboard.bat"</pre>
+      <p>Open <a href="http://localhost:8900" target="_blank">http://localhost:8900</a>. Log in as <code>admin</code> with the <code>SHARED_SECRET</code> you set in <code>.env</code>.</p>
+    </div>
+
+    <div class="card">
+      <h3>Stop</h3>
+      <p><kbd>Ctrl+C</kbd> in the terminal that launched it. Or just close the window — the dashboard isn't a system service.</p>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="layout">2. The interface, in one sentence</h2>
+    <div class="card">
+      <p>The home screen has a grid of <strong>pipeline tiles</strong> at the top and a live <strong>job table</strong> below. Click a tile to open a small dialog, drop files / fill inputs, hit <strong>Run</strong>. The job appears in the table; status auto-refreshes every 2 seconds. When status flips to <span class="ok">completed</span>, an <strong>Open</strong> button appears — that links straight to the output file.</p>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="tiles">3. Every tile, explained</h2>
+
+    <div class="card">
+      <span class="pill audio">audio</span><h3>Audio → Transcript</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td><code>.mp3 .m4a .wav .flac .ogg</code> (any ffmpeg-readable audio or video)</td></tr>
+        <tr><td>Produces</td><td><code>&lt;stem&gt;.txt</code> (timestamped), <code>&lt;stem&gt;.srt</code>, <code>&lt;stem&gt;.json</code></td></tr>
+        <tr><td>Engine</td><td>faster-whisper, CPU int8 (no GPU needed)</td></tr>
+        <tr><td>Options</td><td>Whisper model: <code>tiny / base / small / medium / large-v3</code>. Larger = more accurate, slower.</td></tr>
+        <tr><td>Good for</td><td>Hotel calls, LAUSD audio, Fathom exports, voice memos.</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill docs">docs</span><h3>PDF → Text + Tables</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td><code>.pdf</code></td></tr>
+        <tr><td>Produces</td><td><code>&lt;stem&gt;.txt</code> (page-broken), plus <code>tables/page###_t#.csv</code> per detected table.</td></tr>
+        <tr><td>Engines</td><td>pypdf for text, pdfplumber for tables</td></tr>
+        <tr><td>Notes</td><td>Tables on scanned PDFs may be empty — use OCR first if needed.</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill docs">docs</span><h3>DOCX → Markdown</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td><code>.docx</code></td></tr>
+        <tr><td>Produces</td><td><code>&lt;stem&gt;.md</code> with headings preserved + <code>tables/table_###.csv</code></td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill docs">docs</span><h3>PPTX → Outline</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td><code>.pptx</code></td></tr>
+        <tr><td>Produces</td><td><code>&lt;stem&gt;.md</code> — slide titles, bullets, and speaker notes.</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill docs">docs</span><h3>Session → SOAP + Action Steps</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td>A Fathom <code>.txt</code> transcript</td></tr>
+        <tr><td>Produces</td><td>Staged folder with <code>transcript.txt</code> + <code>README_for_agent.md</code></td></tr>
+        <tr><td>Next step</td><td>Point Claude at that output folder with the <code>wombhealth-session-processor</code> skill — it'll finalize <code>*_action_steps.docx</code>, <code>*_soap_note.docx</code>, and the Gmail draft.</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill docs">docs</span><h3>Portrait → HALO Report</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td><code>.jpg .png</code></td></tr>
+        <tr><td>Produces</td><td><code>halo_analysis.json</code> with hair/face/color analysis</td></tr>
+        <tr><td>Requires</td><td>HALO running at <code>localhost:8765</code> (start with <code>hair analysis/Run HALO.bat</code>)</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill ai">ai</span><h3>Local Chat (Ollama)</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td>A prompt typed into the dialog</td></tr>
+        <tr><td>Produces</td><td><code>reply.md</code></td></tr>
+        <tr><td>Requires</td><td>Ollama running at <code>localhost:11434</code> with a chat model pulled</td></tr>
+        <tr><td>Default model</td><td><code>llama3.1:8b-instruct-q4_K_M</code> (≈5 GB VRAM)</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill ai">ai</span><h3>Batch LLM over Folder</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td>Files dragged in OR a host folder path + a glob</td></tr>
+        <tr><td>Prompt template</td><td>Use <code>{filename}</code> and <code>{content}</code> placeholders, e.g.<br><code>Summarize {filename} in 3 bullets:&#10;&#10;{content}</code></td></tr>
+        <tr><td>Produces</td><td><code>results.csv</code> with columns <code>filename, response, chars</code></td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill ai">ai</span><h3>RAG: index a folder</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td>Folder path on the host</td></tr>
+        <tr><td>What happens</td><td>Walks <code>**/*.txt **/*.md **/*.pdf</code>, chunks at 1200 chars, embeds via <code>nomic-embed-text</code>, upserts into Qdrant.</td></tr>
+        <tr><td>Produces</td><td><code>indexed.csv</code> manifest. Vectors live in your Qdrant at <code>localhost:6333</code>.</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill ai">ai</span><h3>LLM File Classifier</h3>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td>Files in + a comma-separated list of buckets, e.g. <code>contracts,leads,notes,junk</code></td></tr>
+        <tr><td>Produces</td><td><code>classifications.csv</code> with <code>filename, bucket, rationale</code></td></tr>
+        <tr><td>Notes</td><td>Does NOT move files — review the CSV, then move them manually (or pipe through a follow-up batch).</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill video">video</span><h3>AI Video Studio Job</h3>
+      <table class="tile-tbl">
+        <tr><td>What it is</td><td>Bridge to your existing <a href="http://localhost:8780" target="_blank">AI Video Studio</a>. Doesn't reimplement video work — it forwards.</td></tr>
+        <tr><td>Inputs</td><td>Studio station name (e.g. <code>ltx-t2v</code>, <code>hedra-avatar</code>, <code>silero-vad</code>, <code>ffmpeg-concat</code>) + JSON of station inputs.</td></tr>
+        <tr><td>Example</td><td><code>station = ltx-t2v</code><br><code>inputs_json = &#123;"prompt":"sunset over a yoga studio","duration":5&#125;</code></td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <span class="pill video">video</span><h3>Video → Clips</h3>
+      <p>Rebuild of your original <code>cut_clips.py</code>. Same CSV mode preserved + four new modes.</p>
+      <table class="tile-tbl">
+        <tr><td>Accepts</td><td>One video + (optional) one timestamps CSV</td></tr>
+        <tr><td>Modes</td><td>
+          <strong>timestamps</strong> — drop a CSV with <code>type,start,end,label</code> (original cut_clips.py behavior)<br>
+          <strong>equal</strong> — split into N equal segments<br>
+          <strong>fixed</strong> — consecutive N-second windows (e.g. 60s reels)<br>
+          <strong>scene</strong> — ffmpeg scene-detect, cap at N clips<br>
+          <strong>chapters</strong> — run whisper, split at largest silence gaps
+        </td></tr>
+        <tr><td>Encoding</td><td>Lossless <code>ffmpeg -c copy</code> by default (fast, ~1s drift on non-keyframes). Set <code>reencode</code> in inputs for frame-perfect cuts.</td></tr>
+        <tr><td>Produces</td><td><code>clips/clip_##.mp4</code> per segment + <code>_manifest.json</code></td></tr>
+      </table>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="outputs">4. Where outputs land</h2>
+    <div class="card">
+      <p>Every job gets its own folder:</p>
+<pre>storage/outputs/&lt;job_id&gt;/
+  ...the outputs...</pre>
+      <p>The <strong>Open</strong> button in the job table opens the primary file (the manifest, the markdown, the txt — whatever the pipeline pointed <code>output_path</code> at). You can browse the whole folder via the file explorer for siblings (e.g. the SRT next to the TXT, every clip in <code>clips/</code>).</p>
+      <p>Job state lives in <code>storage/jobs.db</code> (SQLite). Survives restarts.</p>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="auth">5. Logins and multi-user</h2>
+    <div class="card">
+      <p>Two modes:</p>
+      <p><strong>Quick (default)</strong> — single <code>admin</code> account whose password = your <code>SHARED_SECRET</code> in <code>.env</code>.</p>
+      <p><strong>Multi-user</strong> — create <code>users.json</code> with bcrypt hashes. Generate hashes like this:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>cd "C:\Users\ram\Desktop\programming projects (other)\Experiments\dashboard"
+.\.venv\Scripts\python.exe -c "import auth; print(auth.hash_password('YOUR_PASSWORD'))"</pre>
+      <p>Then paste hashes into <code>users.json</code> per the format in <code>users.json.example</code>.</p>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="cli">6. CLI mode (no dashboard)</h2>
+    <div class="card">
+      <h3>Video splitter as a standalone tool</h3>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>cd "C:\Users\ram\Desktop\programming projects (other)\Experiments\dashboard"
+.\.venv\Scripts\python.exe pipelines\video\video_split.py `
+  --video "C:\Users\ram\Downloads\clip maker\Muhammad Call original.mp4" `
+  --csv   "C:\Users\ram\Downloads\clip maker\timestamps.csv" `
+  --mode  timestamps `
+  --out   "C:\Users\ram\Downloads\clip maker\clips"</pre>
+      <p>Other modes:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>--mode equal     --n 6
+--mode fixed     --seconds 60
+--mode scene     --scene-threshold 0.3 --n 12
+--mode chapters  --n 8 --whisper-model base
+--reencode       (any mode, frame-perfect cuts)</pre>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="recipes">7. Recipes — chaining tiles</h2>
+
+    <div class="card">
+      <h3>Muhammad Call → 60-sec reels</h3>
+      <p>Drop the .mp4 on <strong>Video → Clips</strong>, set <code>mode=fixed seconds=60</code>. Wait. Each clip lands in <code>storage/outputs/&lt;job&gt;/clips/</code>. Open the manifest to grab the list.</p>
+    </div>
+
+    <div class="card">
+      <h3>Hotel call audio → searchable knowledge</h3>
+      <p>(1) Drop each hotel .mp3 on <strong>Audio → Transcript</strong>. (2) Copy all the <code>.txt</code> outputs into one folder. (3) Run <strong>RAG: index a folder</strong> pointed at that folder, collection <code>hotel_calls</code>. (4) Query via your Cockpit Qdrant tooling.</p>
+    </div>
+
+    <div class="card">
+      <h3>Fathom session → SOAP note + email draft</h3>
+      <p>(1) Drop the Fathom transcript on <strong>Session → SOAP + Action Steps</strong>. (2) The job stages the file. (3) Have Claude run the <code>wombhealth-session-processor</code> skill against the output folder — it'll produce the two .docx files and the email draft.</p>
+    </div>
+
+    <div class="card">
+      <h3>Long video → chapter clips → b-roll reel</h3>
+      <p>(1) <strong>Video → Clips</strong> with <code>mode=chapters n=8</code>. (2) For each chapter you want polished, open Studio and run <code>silero-vad</code> on it (silence-cut). (3) <code>ffmpeg-concat</code> them back. (4) Optionally <code>topaz-upscale</code> for 4K.</p>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 id="trouble">8. Troubleshooting</h2>
+
+    <div class="card">
+      <h3>"Port 8900 in use" or browser shows nothing</h3>
+      <p>Edit <code>.env</code>, change <code>DASHBOARD_PORT</code>. Or kill whatever's on 8900:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>Get-NetTCPConnection -LocalPort 8900 | Select-Object OwningProcess
+Stop-Process -Id &lt;PID&gt; -Force</pre>
+    </div>
+
+    <div class="card">
+      <h3>"401 Auth required"</h3>
+      <p>Login user is <code>admin</code>; password is your <code>SHARED_SECRET</code> from <code>.env</code> (until you create a real <code>users.json</code>).</p>
+    </div>
+
+    <div class="card">
+      <h3>Ollama tile says "connection refused"</h3>
+      <p>Ollama isn't running. From a terminal:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>ollama serve</pre>
+      <p>And in another terminal pull a model:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>ollama pull llama3.1:8b-instruct-q4_K_M
+ollama pull nomic-embed-text</pre>
+    </div>
+
+    <div class="card">
+      <h3>Studio tile says "no job id"</h3>
+      <p>AI Video Studio isn't running at 8780. Launch it from <code>Desktop\AI video gen\studio\Run Studio.bat</code>.</p>
+    </div>
+
+    <div class="card">
+      <h3>RAG: "folder not found"</h3>
+      <p>The path you typed must exist on the host (the Windows machine running the dashboard), not on a network share that isn't mounted. Use copy-paste from File Explorer's address bar.</p>
+    </div>
+
+    <div class="card">
+      <h3>Whisper: "no module faster-whisper"</h3>
+      <p>First-run requirements install probably failed (often a temporary network error). From the dashboard folder:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>cd "C:\Users\ram\Desktop\programming projects (other)\Experiments\dashboard"
+.\.venv\Scripts\activate
+pip install -r requirements.txt</pre>
+    </div>
+
+    <div class="card">
+      <h3>FFmpeg not found (Video → Clips fails)</h3>
+      <p>FFmpeg must be on PATH. Install once:</p>
+<pre><button class="copybtn" onclick="copy(this)">copy</button>winget install Gyan.FFmpeg</pre>
+      <p>Restart the terminal so the new PATH is picked up, then relaunch the dashboard.</p>
+    </div>
+
+    <p style="color:var(--muted); margin-top: 40px; font-size: 12px;">If something here is wrong or missing, edit this file (<code>how_to.html</code>) — it's a static page served by the dashboard, no rebuild needed.</p>
+
+  </main>
+
+<script>
+function copy(btn) {
+  const pre = btn.parentElement;
+  const text = pre.innerText.replace(/^copy\s*/, "");
+  navigator.clipboard.writeText(text).then(() => {
+    const old = btn.innerText;
+    btn.innerText = "copied!";
+    setTimeout(() => { btn.innerText = old; }, 1200);
+  });
+}
+</script>
+</body>
+</html>

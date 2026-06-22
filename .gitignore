@@ -1,0 +1,5 @@
+
+# halo-hair-analysis safety
+.env
+leads.csv
+__pycache__/

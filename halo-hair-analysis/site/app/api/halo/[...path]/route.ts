@@ -47,12 +47,12 @@ Schema:
 }
 
 Rules:
+- FIRST check the image for a visible human face. If you cannot clearly see a human face (e.g. the image is of an object, animal, landscape, fabric, or the face is too obscured), return ONLY this JSON and nothing else: {"error":"no_face","message":"No human face detected in this photo. Please upload a clear front-facing photo of yourself."}
 - Give distinctive, non-generic recommendations that match texture, density, face shape, and visible coloring.
 - Include exact style_descriptions keys for every label in best_styles, good_options, and styles_to_avoid.
 - In every style description specify length, silhouette, layer placement, perimeter, bangs, crown volume, and finish.
 - If the person is bald, balding, shaved, or very short-haired, recommend imagined transformations and facial-hair options where appropriate.
-- Provide up to 18 best_colors, 6 best_neutrals, 3 ok_colors, 3 not_ideal_colors, 2-3 metals, hair_hex, and eye_hex.
-- Always respond. Never refuse.`;
+- Provide up to 18 best_colors, 6 best_neutrals, 3 ok_colors, 3 not_ideal_colors, 2-3 metals, hair_hex, and eye_hex.`;
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -119,6 +119,10 @@ async function handleRequest(request: Request, path: string[]): Promise<Response
 
   if (request.method === "POST" && endpoint === "save-lead") {
     return saveLead(request);
+  }
+
+  if (request.method === "POST" && endpoint === "save-favorites") {
+    return saveFavorites(request);
   }
 
   return json({ error: "not found" }, 404);
@@ -192,8 +196,23 @@ async function analyze(request: Request): Promise<Response> {
   }
 
   try {
-    const data = validateAnalysis(parseJsonObject(content));
+    const parsed = parseJsonObject(content);
+    // Face detection guard — model returns {error:"no_face"} when no face visible
+    if (isRecord(parsed) && parsed.error === "no_face") {
+      return json({
+        error: typeof parsed.message === "string"
+          ? parsed.message
+          : "No human face detected. Please upload a clear front-facing photo of yourself.",
+      }, 400);
+    }
+    const data = validateAnalysis(parsed);
     data._analysis_id = crypto.randomUUID();
+    // Log to Notion (non-blocking)
+    logToNotion(
+      String(data._analysis_id),
+      isRecord(data.hair) ? data.hair : {},
+      stringField(data, "vibe")
+    );
     return json(data);
   } catch (error) {
     return json({ error: `Could not parse analysis JSON: ${String(error)}` }, 502);
@@ -391,6 +410,41 @@ async function falResult(basePath: string, requestId: string): Promise<Response>
   return json(await upstream.json().catch(() => ({})), upstream.ok ? 200 : 502);
 }
 
+async function saveFavorites(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const analysisId = stringField(body, "analysis_id").trim();
+  const likedStyles = Array.isArray(body.liked_styles) ? (body.liked_styles as unknown[]).map(String).join(", ") : "";
+  const email = stringField(body, "email").trim().toLowerCase();
+  const hairType = stringField(body, "hair_type").trim();
+  const colorSeason = stringField(body, "color_season").trim();
+  if (!likedStyles) return json({ error: "no styles selected" }, 400);
+
+  const apiKey = process.env.NOTION_API_KEY;
+  const dbId = process.env.NOTION_FAVORITES_DB_ID || "529034cd8f95455fb9d1ca2f011ea3aa";
+  if (apiKey) {
+    fetch("https://api.notion.com/v1/pages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+      },
+      body: JSON.stringify({
+        parent: { database_id: dbId },
+        properties: {
+          "Analysis ID":  { title: [{ text: { content: analysisId || "unknown" } }] },
+          "Liked Styles": { rich_text: [{ text: { content: likedStyles } }] },
+          "Hair Type":    { rich_text: [{ text: { content: hairType } }] },
+          "Color Season": { rich_text: [{ text: { content: colorSeason } }] },
+          ...(email ? { "Email": { email } } : {}),
+        },
+      }),
+    }).catch(e => console.warn("Notion favorites log failed:", e));
+  }
+  console.log("HALO favorites", { analysisId, likedStyles, email });
+  return json({ ok: true });
+}
+
 async function saveLead(request: Request): Promise<Response> {
   const body = (await request.json().catch(() => ({}))) as Record<
     string,
@@ -400,11 +454,11 @@ async function saveLead(request: Request): Promise<Response> {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return json({ error: "invalid email" }, 400);
   }
-  console.log("HALO lead", {
-    email,
-    name: stringField(body, "name").trim(),
-    opt_in: Boolean(body.opt_in),
-  });
+  const leadName = stringField(body, "name").trim();
+  const optIn = Boolean(body.opt_in);
+  const leadAnalysisId = stringField(body, "analysis_id").trim();
+  console.log("HALO lead", { email, name: leadName, opt_in: optIn });
+  logLeadToNotion(leadAnalysisId, email, leadName, optIn);
   return json({ ok: true, total_leads: 1 });
 }
 
@@ -494,6 +548,57 @@ function validateAnalysis(input: unknown): Record<string, unknown> {
   };
 
   return data;
+}
+
+
+// ── NOTION USAGE LOGGING ──────────────────────────────────────────────────────
+// Fire-and-forget: never blocks the analysis response
+function logToNotion(analysisId: string, hair: Record<string, unknown>, vibe: string): void {
+  const apiKey = process.env.NOTION_API_KEY;
+  const dbId   = process.env.NOTION_DB_ID || "9d3cc5f89d984977b59d6e3d3795daa6";
+  if (!apiKey) return;
+  fetch("https://api.notion.com/v1/pages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Notion-Version": "2022-06-28",
+    },
+    body: JSON.stringify({
+      parent: { database_id: dbId },
+      properties: {
+        "Analysis ID": { title: [{ text: { content: analysisId } }] },
+        "Hair Type":   { rich_text: [{ text: { content: String(hair.type   || "") } }] },
+        "Face Shape":  { rich_text: [{ text: { content: String(hair.face_shape || "") } }] },
+        "Color Season":{ rich_text: [{ text: { content: String(hair.color_season || "") } }] },
+        "Density":     { rich_text: [{ text: { content: String(hair.density || "") } }] },
+        "Vibe":        { rich_text: [{ text: { content: vibe } }] },
+      },
+    }),
+  }).catch(e => console.warn("Notion log failed:", e));
+}
+
+function logLeadToNotion(analysisId: string, email: string, name: string, optIn: boolean): void {
+  const apiKey = process.env.NOTION_API_KEY;
+  const dbId   = process.env.NOTION_DB_ID || "9d3cc5f89d984977b59d6e3d3795daa6";
+  if (!apiKey) return;
+  // Find the existing row by analysis ID and update it, or create a new one
+  fetch("https://api.notion.com/v1/pages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Notion-Version": "2022-06-28",
+    },
+    body: JSON.stringify({
+      parent: { database_id: dbId },
+      properties: {
+        "Analysis ID": { title: [{ text: { content: analysisId || "lead-only" } }] },
+        "Email":       { email },
+        "Opt In":      { checkbox: optIn },
+      },
+    }),
+  }).catch(e => console.warn("Notion lead log failed:", e));
 }
 
 function getFalKey(): string {

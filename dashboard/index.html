@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Doc Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; --bg:#0e0e10; --fg:#eaeaea; --muted:#9aa0a6; --card:#1a1a1f; --accent:#7c5cff; --good:#3ddc84; --bad:#ff5a5f; --warn:#ffb020; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--fg); }
+    header { padding:14px 20px; display:flex; align-items:center; gap:16px; border-bottom:1px solid #25252c; position:sticky; top:0; background:var(--bg); z-index:5;}
+    header h1 { margin:0; font-size:16px; letter-spacing:.3px; }
+    header .links a { color:var(--muted); margin-right:14px; text-decoration:none; font-size:12px; }
+    header .links a:hover { color: var(--fg); }
+    main { padding:20px; max-width:1400px; margin:0 auto; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing:1.2px; color:var(--muted); margin: 24px 0 10px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:14px; }
+    .tile { background:var(--card); border:1px solid #25252c; border-radius:12px; padding:14px; cursor:pointer; transition: transform .08s, border-color .08s;}
+    .tile:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .tile h3 { margin:0 0 6px; font-size:14px; }
+    .tile p { margin:0; color: var(--muted); font-size:12px; }
+    .tile .kind { float:right; font-size:10px; padding:2px 6px; border-radius:6px; background:#25252c; color:var(--muted); text-transform:uppercase; letter-spacing:.8px;}
+
+    .jobs { width:100%; border-collapse: collapse; margin-top:10px; }
+    .jobs th, .jobs td { padding:8px 10px; text-align:left; border-bottom:1px solid #25252c; font-size:12px; }
+    .jobs th { color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.8px; font-size:10px;}
+    .status { font-weight:600; }
+    .status.queued    { color: var(--warn); }
+    .status.running   { color: var(--accent); }
+    .status.completed { color: var(--good); }
+    .status.failed    { color: var(--bad); }
+    .pill { display:inline-block; padding:2px 6px; border-radius:6px; background:#25252c; font-size:10px; color:var(--muted); }
+    a.btn { background: var(--accent); color: white; padding: 4px 8px; border-radius:6px; text-decoration:none; font-size:11px; }
+
+    dialog { background:var(--card); color:var(--fg); border:1px solid #25252c; border-radius:14px; padding:0; min-width: 380px; max-width: 720px; }
+    dialog::backdrop { background: rgba(0,0,0,0.6); }
+    dialog header { border-bottom:1px solid #25252c; padding:12px 16px; position: relative; top:0;}
+    dialog form { padding: 16px; display: grid; gap: 10px; }
+    dialog input, dialog textarea, dialog select { background:#0e0e10; color:var(--fg); border:1px solid #25252c; border-radius:8px; padding:8px 10px; font: inherit; }
+    dialog textarea { min-height:80px; resize: vertical; }
+    dialog .actions { display:flex; gap:10px; justify-content:flex-end; }
+    dialog button { background:var(--accent); color:white; border:0; padding: 8px 14px; border-radius:8px; cursor:pointer; }
+    dialog button.secondary { background:#25252c; color:var(--fg); }
+    .field-label { font-size:11px; color:var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Doc Dashboard</h1>
+    <span class="pill" id="userpill">…</span>
+    <span class="links" style="margin-left:auto">
+      <a href="/how-to" target="_blank"><strong>How To →</strong></a>
+      <a href="http://localhost:8780" target="_blank">AI Video Studio</a>
+      <a href="http://localhost:8765" target="_blank">HALO</a>
+      <a href="http://localhost:8787" target="_blank">Cockpit</a>
+      <a href="http://localhost:8800" target="_blank">Discourse</a>
+      <a href="http://localhost:5678" target="_blank">n8n</a>
+    </span>
+  </header>
+
+  <main>
+    <h2>Pipelines</h2>
+    <div class="grid" id="tiles"></div>
+
+    <h2>Jobs</h2>
+    <table class="jobs">
+      <thead>
+        <tr>
+          <th>ID</th><th>User</th><th>Pipeline</th><th>Status</th><th>Started</th><th>Output</th><th>Progress / Error</th>
+        </tr>
+      </thead>
+      <tbody id="jobsBody"></tbody>
+    </table>
+  </main>
+
+  <dialog id="runDialog">
+    <header><strong id="dlgTitle">Run pipeline</strong></header>
+    <form id="dlgForm">
+      <div id="dlgFileWrap">
+        <span class="field-label">File(s)</span>
+        <input id="dlgFiles" type="file" multiple />
+      </div>
+      <div id="dlgInputsWrap"></div>
+      <div class="actions">
+        <button type="button" class="secondary" onclick="document.getElementById('runDialog').close()">Cancel</button>
+        <button type="submit">Run</button>
+      </div>
+    </form>
+  </dialog>
+
+<script>
+let PIPELINES = [];
+
+const KIND_TO_INPUTS = {
+  // pipeline -> [{name, label, type=text|textarea|number|select, options?, default?, placeholder?}]
+  "transcribe":   [{name:"model",label:"Whisper model",type:"select",options:["tiny","base","small","medium","large-v3"],default:"base"}],
+  "video-split":  [
+    {name:"mode",label:"Mode",type:"select",options:["timestamps","equal","fixed","scene","chapters"],default:"equal"},
+    {name:"n",label:"N (equal/scene)",type:"number",default:6},
+    {name:"seconds",label:"Seconds (fixed)",type:"number",default:60},
+    {name:"scene_threshold",label:"Scene threshold (0-1)",type:"number",default:0.3},
+    {name:"whisper_model",label:"Whisper model (chapters)",type:"select",options:["base","small","medium","large-v3"],default:"base"}
+  ],
+  "ollama-chat":  [
+    {name:"prompt",label:"Prompt",type:"textarea",placeholder:"What's up?"},
+    {name:"model",label:"Model",type:"text",default:"llama3.1:8b-instruct-q4_K_M"}
+  ],
+  "batch-llm":    [
+    {name:"prompt",label:"Prompt template (use {filename} {content})",type:"textarea",placeholder:"Summarize {filename} in 3 bullets:\n\n{content}"},
+    {name:"glob",label:"Glob",type:"text",default:"*.txt"},
+    {name:"model",label:"Model",type:"text",default:"llama3.1:8b-instruct-q4_K_M"}
+  ],
+  "rag-index":    [
+    {name:"folder",label:"Folder path (host)",type:"text",placeholder:"C:\\Users\\ram\\Desktop\\..."},
+    {name:"collection",label:"Qdrant collection",type:"text",default:"dashboard_docs"}
+  ],
+  "classifier":   [
+    {name:"buckets",label:"Buckets (comma-separated)",type:"text",placeholder:"contracts,leads,notes,junk"},
+    {name:"model",label:"Model",type:"text",default:"llama3.1:8b-instruct-q4_K_M"}
+  ],
+  "studio":       [
+    {name:"station",label:"Studio station",type:"text",placeholder:"ltx-t2v / hedra-avatar / silero-vad / ..."},
+    {name:"inputs_json",label:"Station inputs (JSON)",type:"textarea",placeholder:'{"prompt":"sunset over the studio"}'}
+  ],
+  "soap-note":    [],
+  "halo-proxy":   [],
+  "pdf-extract":  [],
+  "docx-extract": [],
+  "pptx-extract": [],
+};
+
+async function loadPipelines() {
+  const r = await fetch("/api/pipelines"); PIPELINES = await r.json();
+  const tiles = document.getElementById("tiles");
+  tiles.innerHTML = PIPELINES.map(p => `
+    <div class="tile" data-pipeline="${p.name}">
+      <span class="kind">${p.kind}</span>
+      <h3>${p.label}</h3>
+      <p>${p.name}</p>
+    </div>
+  `).join("");
+  for (const tile of tiles.querySelectorAll(".tile")) {
+    tile.addEventListener("click", () => openDialog(tile.dataset.pipeline));
+  }
+}
+
+function openDialog(pipelineName) {
+  const p = PIPELINES.find(x => x.name === pipelineName);
+  document.getElementById("dlgTitle").textContent = p.label;
+  const form = document.getElementById("dlgForm");
+  form.dataset.pipeline = pipelineName;
+  // build dynamic fields
+  const wrap = document.getElementById("dlgInputsWrap");
+  const fields = KIND_TO_INPUTS[pipelineName] || [];
+  wrap.innerHTML = fields.map(f => {
+    if (f.type === "textarea") {
+      return `<label><span class="field-label">${f.label}</span><textarea name="${f.name}" placeholder="${f.placeholder || ''}">${f.default || ''}</textarea></label>`;
+    }
+    if (f.type === "select") {
+      const opts = (f.options || []).map(o => `<option value="${o}" ${o === f.default ? "selected" : ""}>${o}</option>`).join("");
+      return `<label><span class="field-label">${f.label}</span><select name="${f.name}">${opts}</select></label>`;
+    }
+    return `<label><span class="field-label">${f.label}</span><input name="${f.name}" type="${f.type || 'text'}" value="${f.default ?? ''}" placeholder="${f.placeholder || ''}"></label>`;
+  }).join("");
+  // hide file input for pure-text pipelines
+  const filesNeeded = !["ollama-chat","batch-llm","rag-index","classifier","studio"].includes(pipelineName);
+  document.getElementById("dlgFileWrap").style.display = filesNeeded ? "" : "none";
+  document.getElementById("runDialog").showModal();
+}
+
+document.getElementById("dlgForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const pipeline = form.dataset.pipeline;
+  const files = document.getElementById("dlgFiles").files;
+  const inputs = {};
+  for (const el of form.elements) {
+    if (!el.name || el.name === "files") continue;
+    inputs[el.name] = el.value;
+  }
+  if (files && files.length) {
+    const fd = new FormData();
+    fd.append("pipeline", pipeline);
+    fd.append("inputs", JSON.stringify(inputs));
+    for (let i = 0; i < files.length; i++) fd.append("file" + i, files[i]);
+    await fetch("/api/upload", {method:"POST", body: fd});
+  } else {
+    await fetch("/api/run/" + pipeline, {method:"POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(inputs)});
+  }
+  document.getElementById("runDialog").close();
+  refreshJobs();
+});
+
+async function refreshJobs() {
+  const r = await fetch("/api/jobs"); const jobs = await r.json();
+  const body = document.getElementById("jobsBody");
+  body.innerHTML = jobs.map(j => {
+    const out = j.output_path
+      ? `<a class="btn" href="/outputs/${encodeURIComponent((j.output_path||"").split(/[\\/]/).slice(-2).join("/"))}" target="_blank">Open</a>`
+      : "";
+    return `<tr>
+      <td>${j.id}</td>
+      <td>${j.user || ""}</td>
+      <td>${j.pipeline}</td>
+      <td class="status ${j.status}">${j.status}</td>
+      <td>${j.started_at || j.created_at || ""}</td>
+      <td>${out}</td>
+      <td>${(j.error || j.progress || "")}</td>
+    </tr>`;
+  }).join("");
+}
+
+(async function init() {
+  await loadPipelines();
+  await refreshJobs();
+  setInterval(refreshJobs, 2000);
+  document.getElementById("userpill").textContent = "logged in";
+})();
+</script>
+</body>
+</html>

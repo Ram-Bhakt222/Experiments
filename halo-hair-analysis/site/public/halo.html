@@ -376,6 +376,43 @@
   .disclaimer { text-align: center; font-size: 11px; color: var(--muted);
                 font-style: italic; margin: 24px 0; }
 
+  /* ---- heart / like button ---- */
+  .like-btn {
+    font-size: 14px; padding: 3px 8px; border-radius: 100px;
+    background: #fff; border: 1px solid var(--border);
+    cursor: pointer; font-family: inherit; transition: all 0.15s;
+    line-height: 1;
+  }
+  .like-btn:hover { border-color: #e06c8a; }
+  .like-btn.liked { background: #fce8ef; border-color: #e06c8a; }
+
+  /* ---- per-card action row additions ---- */
+  .dl-btn, .share-btn {
+    font-size: 10px; padding: 3px 8px; border-radius: 100px;
+    background: #fff; border: 1px solid var(--border);
+    cursor: pointer; color: var(--ink); font-family: inherit;
+    transition: all 0.15s; text-decoration: none; display: inline-block;
+  }
+  .dl-btn:hover, .share-btn:hover { border-color: var(--green); background: var(--green-soft); }
+
+  /* ---- favorites sticky bar ---- */
+  .fav-bar {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #2c2622; color: #fff; border-radius: 100px;
+    padding: 12px 22px; display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.25); z-index: 999;
+    font-size: 14px; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+  }
+  .fav-bar.visible { opacity: 1; pointer-events: auto; }
+  .fav-bar .fav-count { font-weight: 700; }
+  .fav-bar .fav-save-btn {
+    background: #6b8e5a; color: #fff; border: none; border-radius: 100px;
+    padding: 7px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: inherit;
+  }
+  .fav-bar .fav-save-btn:disabled { opacity: 0.6; cursor: wait; }
+
   /* IG portrait export sandbox (off-screen) */
   .ig-export { position: fixed; left: -9999px; top: 0; width: 1080px; padding: 60px 50px;
                background: var(--bg); }
@@ -664,6 +701,12 @@
   <!-- IG export sandbox (off-screen) -->
   <div class="ig-export" id="igExport"></div>
 
+  <!-- FAVORITES BAR -->
+  <div class="fav-bar" id="favBar" role="status" aria-live="polite">
+    <span>❤️ <span class="fav-count" id="favCount">0</span> style<span id="favPlural">s</span> liked</span>
+    <button class="fav-save-btn" id="favSaveBtn" type="button">Save my favorites</button>
+  </div>
+
   <!-- ============= VIDEO CONFIRM MODAL ============= -->
   <div class="modal-overlay" id="videoConfirmModal" role="dialog" aria-modal="true" aria-labelledby="videoConfirmTitle">
     <div class="modal-card">
@@ -852,6 +895,7 @@ const state = {
   analysisId: null,
   imageJobs: {},
   videoJobs: {},
+  likedStyles: new Set(),
   editing: false
 };
 
@@ -937,16 +981,30 @@ function renderStyleGrid(containerId, items, isBad) {
     const animBtnDisabled = !canAnimate || (vidJob && (vidJob.status === "loading" || vidJob.status === "polling"));
     const animBtnLabel = vidJob && vidJob.status === "done" ? "Replay video" : "See it move";
     const failed = imgJob && imgJob.status === "error";
+    const hasMedia = imgJob && imgJob.status === "done" && imgJob.url;
+    const mediaUrl = hasMedia ? imgJob.url : "";
+    const isVideo = vidJob && vidJob.status === "done" && vidJob.url;
+    const dlUrl = isVideo ? vidJob.url : mediaUrl;
+    const dlExt = isVideo ? "mp4" : "jpg";
+    const isLiked = state.likedStyles.has(label);
     const retryBtn = failed
       ? `<button class="mini-btn retry-card-btn" data-label="${escapeHtml(label)}">Retry preview</button>`
+      : "";
+    const dlBtn = dlUrl
+      ? `<a class="dl-btn" href="${escapeHtml(dlUrl)}" download="halo-${escapeHtml(label).replace(/\s+/g,'-')}.${dlExt}" title="Download">⬇</a>`
+      : "";
+    const shareBtn = dlUrl
+      ? `<button class="share-btn share-card-btn" data-label="${escapeHtml(label)}" data-url="${escapeHtml(dlUrl)}" title="Share">↗</button>`
       : "";
     return `<div class="style-card ${isBad ? 'bad' : ''}" id="${cardId}">
       <div class="${thumbCls}">${thumbInner}</div>
       <div class="label">${escapeHtml(label)}</div>
       <div class="badge" aria-hidden="true">${isBad ? '✕' : '✓'}</div>
       <div class="card-actions">
+        <button class="like-btn${isLiked ? ' liked' : ''}" data-label="${escapeHtml(label)}" title="${isLiked ? 'Unlike' : 'Like'}" aria-pressed="${isLiked}">${isLiked ? '❤️' : '🤍'}</button>
         ${retryBtn}
         ${failed ? "" : `<button class="mini-btn animate-card-btn" data-label="${escapeHtml(label)}" ${animBtnDisabled ? 'disabled' : ''}>${animBtnLabel}</button>`}
+        ${dlBtn}${shareBtn}
       </div>
     </div>`;
   }).join("");
@@ -1443,6 +1501,77 @@ function triggerDownload(dataUrl, filename) {
   document.body.appendChild(a); a.click(); a.remove();
 }
 
+// -------- FAVORITES --------
+function updateFavBar() {
+  const bar = document.getElementById("favBar");
+  const count = document.getElementById("favCount");
+  const plural = document.getElementById("favPlural");
+  if (!bar) return;
+  const n = state.likedStyles.size;
+  count.textContent = n;
+  plural.textContent = n === 1 ? "" : "s";
+  bar.classList.toggle("visible", n > 0);
+}
+
+async function saveFavorites() {
+  const btn = document.getElementById("favSaveBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+  try {
+    const h = (state.analysis && state.analysis.hair) || {};
+    const c = (state.analysis && state.analysis.color) || {};
+    const emailEl = document.getElementById("leadEmail");
+    const email = emailEl ? emailEl.value.trim() : "";
+    await fetch("/save-favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        analysis_id: state.analysisId || "",
+        liked_styles: Array.from(state.likedStyles),
+        hair_type: h.type || "",
+        color_season: c.season || "",
+        email
+      })
+    });
+    if (btn) { btn.textContent = "✓ Saved!"; }
+    setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = "Save my favorites"; } }, 3000);
+  } catch {
+    if (btn) { btn.disabled = false; btn.textContent = "Save my favorites"; }
+  }
+}
+
+// Like button toggle
+document.body.addEventListener("click", (e) => {
+  const btn = e.target.closest(".like-btn");
+  if (!btn) return;
+  const label = btn.getAttribute("data-label");
+  if (!label) return;
+  if (state.likedStyles.has(label)) {
+    state.likedStyles.delete(label);
+  } else {
+    state.likedStyles.add(label);
+  }
+  updateFavBar();
+  renderAllStyleGrids();
+});
+
+// Share button
+document.body.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".share-card-btn");
+  if (!btn) return;
+  const label = btn.getAttribute("data-label");
+  const url = btn.getAttribute("data-url");
+  if (!url) return;
+  if (navigator.share) {
+    try { await navigator.share({ title: `HALO — ${label}`, url }); return; } catch { /* fall through */ }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    const orig = btn.textContent;
+    btn.textContent = "✓ Copied";
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  } catch { /* ignore */ }
+});
+
 // -------- helpers --------
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g,
@@ -1503,6 +1632,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("copyTextBtn").addEventListener("click", copySummaryText);
 
   // top-bar actions
+  document.getElementById("favSaveBtn") && document.getElementById("favSaveBtn").addEventListener("click", saveFavorites);
+
   document.getElementById("newBtn").addEventListener("click", () => {
     state.file = null; state.photoUrl = null; state.referenceUrl = null;
     state.analysis = null; state.imageJobs = {}; state.videoJobs = {};

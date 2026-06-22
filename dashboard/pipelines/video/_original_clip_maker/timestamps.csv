@@ -1,0 +1,11 @@
+type,start,end,label
+section,0:00,3:36,Catch-up and PhD discussion
+section,3:36,5:12,Data generation and research goals
+section,5:12,9:30,Website backend issues and Laravel structure
+section,9:30,20:38,Critique of past workflow and business structure
+section,20:38,33:41,History of Long Beach School of Yoga and My Yoga Network beginnings
+section,33:41,42:28,"Hotel contracts, outreach methods, and team changes"
+section,42:28,47:07,"Sales consultants, outreach experiments, and Sam's healthcare strategy"
+section,47:07,51:32,"Current revenue, lessons from arbitrage, and Dawood's perspective"
+section,51:32,1:06:23,"AI, automation, lead generation strategies, and SaaS vision"
+section,1:06:23,1:20:02,"Next steps: GPT API integration, login system, Laravel Socialite, and closing"
