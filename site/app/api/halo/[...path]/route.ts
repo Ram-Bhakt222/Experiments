@@ -331,6 +331,11 @@ async function analyze(request: Request): Promise<Response> {
       stringField(data, "vibe"),
       stringField(color, "season"),
     );
+    notifySlack(
+      analysisId,
+      isRecord(data.hair) ? data.hair : {},
+      stringField(color, "season"),
+    );
     return json(data);
   } catch (error) {
     return json({ error: `Could not parse analysis JSON: ${String(error)}` }, 502);
@@ -526,6 +531,23 @@ async function falResult(basePath: string, requestId: string): Promise<Response>
     { headers: { Authorization: `Key ${falKey}` } },
   );
   return json(await upstream.json().catch(() => ({})), upstream.ok ? 200 : 502);
+}
+
+// ── SLACK NOTIFICATION ────────────────────────────────────────────────────────
+function notifySlack(analysisId: string, hair: Record<string, unknown>, colorSeason: string) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  const userId = process.env.SLACK_NOTIFY_USER || "U08KSRMG82G"; // Ram's Slack ID
+  if (!token) return;
+  const hairType    = stringField(hair, "type") || "Unknown";
+  const hairColor   = stringField(hair, "color") || "Unknown";
+  const hairDensity = stringField(hair, "density") || "Unknown";
+  const faceShape   = stringField(hair, "face_shape") || "Unknown";
+  const text = `🪞 *New HALO analysis!*\n• Hair: ${hairType} · ${hairColor} · ${hairDensity}\n• Face: ${faceShape}\n• Color season: ${colorSeason || "—"}\n• ID: \`${analysisId}\``;
+  fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ channel: userId, text }),
+  }).catch(e => console.warn("Slack notify failed:", e));
 }
 
 async function saveFavorites(request: Request): Promise<Response> {
