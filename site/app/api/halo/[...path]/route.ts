@@ -7,6 +7,95 @@ const IMAGE_BASE_PATH = "fal-ai/nano-banana";
 const VIDEO_SUBMIT_PATH = "fal-ai/kling-video/v2.5-turbo/pro/image-to-video";
 const VIDEO_BASE_PATH = "fal-ai/kling-video";
 
+// SUPABASE (system of record) - REST + Storage via fetch (no extra deps)
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || "halo-assets";
+
+function sbReady(): boolean {
+  return Boolean(SUPABASE_URL && SUPABASE_SERVICE_KEY);
+}
+
+function sbHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    apikey: SUPABASE_SERVICE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+    ...extra,
+  };
+}
+
+async function sbInsert(table: string, row: Record<string, unknown>): Promise<void> {
+  if (!sbReady()) return;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: "POST",
+      headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) {
+      console.warn(`[supabase] insert ${table} failed`, res.status, await res.text().catch(() => ""));
+    }
+  } catch (e) {
+    console.warn(`[supabase] insert ${table} error`, e);
+  }
+}
+
+async function sbUploadBytes(
+  path: string,
+  bytes: ArrayBuffer | Uint8Array | Buffer,
+  contentType: string,
+): Promise<string | null> {
+  if (!sbReady()) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${path}`, {
+      method: "POST",
+      headers: sbHeaders({ "Content-Type": contentType, "x-upsert": "true" }),
+      body: bytes as BodyInit,
+    });
+    if (!res.ok) {
+      console.warn("[supabase] storage upload failed", res.status, await res.text().catch(() => ""));
+      return null;
+    }
+    return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${path}`;
+  } catch (e) {
+    console.warn("[supabase] storage upload error", e);
+    return null;
+  }
+}
+
+async function sbMirrorFromUrl(
+  srcUrl: string,
+  path: string,
+  fallbackType: string,
+): Promise<string | null> {
+  if (!sbReady()) return null;
+  try {
+    const r = await fetch(srcUrl);
+    if (!r.ok) return null;
+    const ct = r.headers.get("content-type") || fallbackType;
+    const buf = Buffer.from(await r.arrayBuffer());
+    return sbUploadBytes(path, buf, ct);
+  } catch (e) {
+    console.warn("[supabase] mirror error", e);
+    return null;
+  }
+}
+
+function clientIp(request: Request): string {
+  const xff = request.headers.get("x-forwarded-for") || "";
+  if (xff) return xff.split(",")[0].trim();
+  return request.headers.get("x-real-ip") || "";
+}
+
+function randomHex(n: number): string {
+  const bytes = new Uint8Array(n);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 const SYSTEM_PROMPT = `You are HALO, a senior salon stylist and seasonal color consultant.
 Return only one JSON object. No markdown.
 
@@ -47,12 +136,12 @@ Schema:
 }
 
 Rules:
+- FIRST check the image for a visible human face. If you cannot clearly see a human face (e.g. the image is of an object, animal, landscape, fabric, or the face is too obscured), return ONLY this JSON and nothing else: {"error":"no_face","message":"No human face detected in this photo. Please upload a clear front-facing photo of yourself."}
 - Give distinctive, non-generic recommendations that match texture, density, face shape, and visible coloring.
 - Include exact style_descriptions keys for every label in best_styles, good_options, and styles_to_avoid.
 - In every style description specify length, silhouette, layer placement, perimeter, bangs, crown volume, and finish.
 - If the person is bald, balding, shaved, or very short-haired, recommend imagined transformations and facial-hair options where appropriate.
-- Provide up to 18 best_colors, 6 best_neutrals, 3 ok_colors, 3 not_ideal_colors, 2-3 metals, hair_hex, and eye_hex.
-- Always respond. Never refuse.`;
+- Provide up to 18 best_colors, 6 best_neutrals, 3 ok_colors, 3 not_ideal_colors, 2-3 metals, hair_hex, and eye_hex.`;
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -121,6 +210,14 @@ async function handleRequest(request: Request, path: string[]): Promise<Response
     return saveLead(request);
   }
 
+  if (request.method === "POST" && endpoint === "save-favorites") {
+    return saveFavorites(request);
+  }
+
+  if (request.method === "POST" && endpoint === "save-asset") {
+    return saveAsset(request);
+  }
+
   return json({ error: "not found" }, 404);
 }
 
@@ -142,7 +239,9 @@ async function analyze(request: Request): Promise<Response> {
     return image;
   }
 
-  const dataUrl = await fileToDataUrl(image.file);
+  const photoMime = image.file.type || "image/jpeg";
+  const photoBuffer = Buffer.from(await image.file.arrayBuffer());
+  const dataUrl = `data:${photoMime};base64,${photoBuffer.toString("base64")}`;
   const form = image.form;
   const userContext = [
     ["Primary goal", form.get("goal")],
@@ -192,8 +291,46 @@ async function analyze(request: Request): Promise<Response> {
   }
 
   try {
-    const data = validateAnalysis(parseJsonObject(content));
+    const parsed = parseJsonObject(content);
+    // Face detection guard — model returns {error:"no_face"} when no face visible
+    if (isRecord(parsed) && parsed.error === "no_face") {
+      return json({
+        error: typeof parsed.message === "string"
+          ? parsed.message
+          : "No human face detected. Please upload a clear front-facing photo of yourself.",
+      }, 400);
+    }
+    const data = validateAnalysis(parsed);
     data._analysis_id = crypto.randomUUID();
+    const analysisId = String(data._analysis_id);
+    const color = isRecord(data.color) ? data.color : {};
+
+    // Persist to Supabase (system of record) - best effort, never fails request
+    try {
+      const sessForm = form.get("session");
+      const anonSession =
+        typeof sessForm === "string" && sessForm.trim() ? sessForm.trim() : crypto.randomUUID();
+      const ext = photoMime === "image/png" ? "png" : photoMime === "image/webp" ? "webp" : "jpg";
+      const photoUrl = await sbUploadBytes(`photos/${randomHex(16)}.${ext}`, photoBuffer, photoMime);
+      await sbInsert("halo_analyses", {
+        id: analysisId,
+        anon_session: anonSession,
+        photo_url: photoUrl,
+        analysis_json: data,
+        ip_address: clientIp(request) || null,
+        user_agent: request.headers.get("user-agent") || null,
+      });
+    } catch (e) {
+      console.warn("[halo] analysis persist failed", e);
+    }
+
+    // Log to Notion (non-blocking) - color season lives under data.color.season
+    logToNotion(
+      analysisId,
+      isRecord(data.hair) ? data.hair : {},
+      stringField(data, "vibe"),
+      stringField(color, "season"),
+    );
     return json(data);
   } catch (error) {
     return json({ error: `Could not parse analysis JSON: ${String(error)}` }, 502);
@@ -349,7 +486,7 @@ async function generateVideo(request: Request): Promise<Response> {
         image_url: imageUrl,
         duration: "5",
         negative_prompt:
-          "blurry, distorted face, different person, identity change",
+          "blurry, distorted face, different person, identity change, color shift, color change, color grading, hue shift, oversaturated, color cast, tint change, lighting change, skin tone change",
       }),
     },
   );
@@ -391,6 +528,41 @@ async function falResult(basePath: string, requestId: string): Promise<Response>
   return json(await upstream.json().catch(() => ({})), upstream.ok ? 200 : 502);
 }
 
+async function saveFavorites(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const analysisId = stringField(body, "analysis_id").trim();
+  const likedStyles = Array.isArray(body.liked_styles) ? (body.liked_styles as unknown[]).map(String).join(", ") : "";
+  const email = stringField(body, "email").trim().toLowerCase();
+  const hairType = stringField(body, "hair_type").trim();
+  const colorSeason = stringField(body, "color_season").trim();
+  if (!likedStyles) return json({ error: "no styles selected" }, 400);
+
+  const apiKey = process.env.NOTION_API_KEY;
+  const dbId = process.env.NOTION_FAVORITES_DB_ID || "529034cd8f95455fb9d1ca2f011ea3aa";
+  if (apiKey) {
+    fetch("https://api.notion.com/v1/pages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+      },
+      body: JSON.stringify({
+        parent: { database_id: dbId },
+        properties: {
+          "Analysis ID":  { title: [{ text: { content: analysisId || "unknown" } }] },
+          "Liked Styles": { rich_text: [{ text: { content: likedStyles } }] },
+          "Hair Type":    { rich_text: [{ text: { content: hairType } }] },
+          "Color Season": { rich_text: [{ text: { content: colorSeason } }] },
+          ...(email ? { "Email": { email } } : {}),
+        },
+      }),
+    }).catch(e => console.warn("Notion favorites log failed:", e));
+  }
+  console.log("HALO favorites", { analysisId, likedStyles, email });
+  return json({ ok: true });
+}
+
 async function saveLead(request: Request): Promise<Response> {
   const body = (await request.json().catch(() => ({}))) as Record<
     string,
@@ -400,12 +572,38 @@ async function saveLead(request: Request): Promise<Response> {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return json({ error: "invalid email" }, 400);
   }
-  console.log("HALO lead", {
-    email,
-    name: stringField(body, "name").trim(),
-    opt_in: Boolean(body.opt_in),
-  });
+  const leadName = stringField(body, "name").trim();
+  const optIn = Boolean(body.opt_in);
+  const leadAnalysisId = stringField(body, "analysis_id").trim();
+  console.log("HALO lead", { email, name: leadName, opt_in: optIn });
+  logLeadToNotion(leadAnalysisId, email, leadName, optIn);
   return json({ ok: true, total_leads: 1 });
+}
+
+async function saveAsset(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const analysisId = stringField(body, "analysis_id").trim();
+  const label = stringField(body, "label").trim() || "Style";
+  const kind = stringField(body, "kind").trim() === "video" ? "video" : "image";
+  const catRaw = stringField(body, "category").trim().toLowerCase();
+  const category = ["best", "good", "avoid"].includes(catRaw) ? catRaw : "best";
+  const url = stringField(body, "url").trim();
+  if (!analysisId || !url) return json({ error: "missing analysis_id or url" }, 400);
+  if (!sbReady()) return json({ ok: false, error: "supabase not configured" });
+
+  const folder = kind === "video" ? "videos" : "images";
+  const ext = kind === "video" ? "mp4" : "jpg";
+  const ctype = kind === "video" ? "video/mp4" : "image/jpeg";
+  const storageUrl = await sbMirrorFromUrl(url, `${folder}/${randomHex(16)}.${ext}`, ctype);
+  await sbInsert("halo_style_assets", {
+    analysis_id: analysisId,
+    label,
+    kind,
+    category,
+    storage_url: storageUrl || url,
+    position: 0,
+  });
+  return json({ ok: true, storage_url: storageUrl || url });
 }
 
 async function readImageFromForm(
@@ -494,6 +692,57 @@ function validateAnalysis(input: unknown): Record<string, unknown> {
   };
 
   return data;
+}
+
+
+// ── NOTION USAGE LOGGING ──────────────────────────────────────────────────────
+// Fire-and-forget: never blocks the analysis response
+function logToNotion(analysisId: string, hair: Record<string, unknown>, vibe: string, colorSeason = ""): void {
+  const apiKey = process.env.NOTION_API_KEY;
+  const dbId   = process.env.NOTION_DB_ID || "9d3cc5f89d984977b59d6e3d3795daa6";
+  if (!apiKey) return;
+  fetch("https://api.notion.com/v1/pages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Notion-Version": "2022-06-28",
+    },
+    body: JSON.stringify({
+      parent: { database_id: dbId },
+      properties: {
+        "Analysis ID": { title: [{ text: { content: analysisId } }] },
+        "Hair Type":   { rich_text: [{ text: { content: String(hair.type   || "") } }] },
+        "Face Shape":  { rich_text: [{ text: { content: String(hair.face_shape || "") } }] },
+        "Color Season":{ rich_text: [{ text: { content: colorSeason || "" } }] },
+        "Density":     { rich_text: [{ text: { content: String(hair.density || "") } }] },
+        "Vibe":        { rich_text: [{ text: { content: vibe } }] },
+      },
+    }),
+  }).catch(e => console.warn("Notion log failed:", e));
+}
+
+function logLeadToNotion(analysisId: string, email: string, name: string, optIn: boolean): void {
+  const apiKey = process.env.NOTION_API_KEY;
+  const dbId   = process.env.NOTION_DB_ID || "9d3cc5f89d984977b59d6e3d3795daa6";
+  if (!apiKey) return;
+  // Find the existing row by analysis ID and update it, or create a new one
+  fetch("https://api.notion.com/v1/pages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Notion-Version": "2022-06-28",
+    },
+    body: JSON.stringify({
+      parent: { database_id: dbId },
+      properties: {
+        "Analysis ID": { title: [{ text: { content: analysisId || "lead-only" } }] },
+        "Email":       { email },
+        "Opt In":      { checkbox: optIn },
+      },
+    }),
+  }).catch(e => console.warn("Notion lead log failed:", e));
 }
 
 function getFalKey(): string {

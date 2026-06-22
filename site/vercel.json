@@ -1,15 +1,53 @@
 {
   "buildCommand": "next build",
   "rewrites": [
-    { "source": "/health", "destination": "/api/halo/health" },
-    { "source": "/upload-photo", "destination": "/api/halo/upload-photo" },
-    { "source": "/analyze", "destination": "/api/halo/analyze" },
-    { "source": "/generate-image", "destination": "/api/halo/generate-image" },
-    { "source": "/image-status/:id", "destination": "/api/halo/image-status/:id" },
-    { "source": "/image-result/:id", "destination": "/api/halo/image-result/:id" },
-    { "source": "/generate-video", "destination": "/api/halo/generate-video" },
-    { "source": "/video-status/:id", "destination": "/api/halo/video-status/:id" },
-    { "source": "/video-result/:id", "destination": "/api/halo/video-result/:id" },
-    { "source": "/save-lead", "destination": "/api/halo/save-lead" }
+    {
+      "source": "/health",
+      "destination": "/api/halo/health"
+    },
+    {
+      "source": "/upload-photo",
+      "destination": "/api/halo/upload-photo"
+    },
+    {
+      "source": "/analyze",
+      "destination": "/api/halo/analyze"
+    },
+    {
+      "source": "/generate-image",
+      "destination": "/api/halo/generate-image"
+    },
+    {
+      "source": "/image-status/:id",
+      "destination": "/api/halo/image-status/:id"
+    },
+    {
+      "source": "/image-result/:id",
+      "destination": "/api/halo/image-result/:id"
+    },
+    {
+      "source": "/generate-video",
+      "destination": "/api/halo/generate-video"
+    },
+    {
+      "source": "/video-status/:id",
+      "destination": "/api/halo/video-status/:id"
+    },
+    {
+      "source": "/video-result/:id",
+      "destination": "/api/halo/video-result/:id"
+    },
+    {
+      "source": "/save-lead",
+      "destination": "/api/halo/save-lead"
+    },
+    {
+      "source": "/save-favorites",
+      "destination": "/api/halo/save-favorites"
+    },
+    {
+      "source": "/save-asset",
+      "destination": "/api/halo/save-asset"
+    }
   ]
 }
